@@ -6,7 +6,7 @@
 ### Clone the Repository
 
 ```sh
-git clone git@git.aiby.tools:style-ml/stlml001-clothing-segmentation.git
+git clone https://github.com/AlekseiLugovoi/medscreen.git
 ```
 
 ### Local Setup
