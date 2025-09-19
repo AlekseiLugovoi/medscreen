@@ -1,15 +1,18 @@
-# medscreen
+# 🩺 medscreen
 Сервис для выявления компьютерных томографий органов грудной клетки без патологий
 
-## Quick Start
+## 🚀 Quick Start
 
-### Clone the Repository
-
-```sh
-git clone https://github.com/AlekseiLugovoi/medscreen.git
-```
+### Online Demo
+Попробовать сервис можно здесь:  
+👉 [[TODO] Запустить онлайн](https://d848d1e027dd94c969d950ddf81efe6c9.clg07azjl.paperspacegradient.com)  
 
 ### Local Setup
+
+- Clone the Repository
+    ```sh
+    git clone https://github.com/AlekseiLugovoi/medscreen.git
+    ```
 
 - Run Conda
     ```sh
@@ -29,3 +32,20 @@ git clone https://github.com/AlekseiLugovoi/medscreen.git
     docker build -t medscreen .
     docker run -p 8501:8501 medscreen
     ```
+
+## 📂 Структура проекта
+```
+
+├── .github/workflows/   # CI/CD для публикации Docker-образа
+├── .streamlit/          # Конфигурация Streamlit
+├── app/                 # Исходный код Streamlit-приложения
+├── dev/                 # Файлы для разработки и исследований
+├── Dockerfile           # Инструкции для сборки Docker-образа
+├── README.md            # Этот файл
+└── requirements.txt     # Зависимости Python
+```
+
+## 🔗 Ссылки
+
+- **Веса модели:** [Ссылка на ваш лендинг]
+- **Презентация проекта:** [Ссылка на вашу презентацию]
