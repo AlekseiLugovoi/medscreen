@@ -5,7 +5,7 @@
 
 ### Online Demo
 Попробовать сервис можно здесь:  
-👉 [[TODO] Запустить онлайн](https://d848d1e027dd94c969d950ddf81efe6c9.clg07azjl.paperspacegradient.com)  
+👉 [Запустить онлайн](https://d848d1e027dd94c969d950ddf81efe6c9.clg07azjl.paperspacegradient.com)  
 
 ### Local Setup
 
