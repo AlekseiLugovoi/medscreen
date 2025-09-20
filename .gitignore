@@ -2,9 +2,14 @@
 *.pt
 *.safetensors
 
+# data
 dev/output/
+dev/data/
 tmp/
+*.zip
+*.csv
 
+# cache
 .idea/
 .DS_Store
 __pycache__/

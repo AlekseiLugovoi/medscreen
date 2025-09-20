@@ -8,3 +8,4 @@ font = "monospace"
 [server]
 address = "127.0.0.1"
 port = 8502
+maxUploadSize = 500

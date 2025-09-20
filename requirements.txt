@@ -1,2 +1,14 @@
+# Web Application Framework
 streamlit==1.49.1
-pillow==9.4.0
+
+# Medical Imaging & Data Processing
+imageio==2.36.0
+numpy==2.1.2
+pandas==2.2.2
+Pillow==9.4.0
+pydicom==3.0.1
+SimpleITK==2.5.2
+
+# Utilities & Visualization
+matplotlib==3.9.2
+tqdm==4.66.5
