@@ -1,97 +1,240 @@
-# app/pages.py
-
 import streamlit as st
-import pydicom
 import pandas as pd
-import io
-from utils import get_meta, to_uint8, normalize_dicom_and_get_frames
+from utils import (
+    process_uploaded_file, validate_series, 
+    run_pathology_inference, model, create_gif_from_frames, 
+    precompute_uint8_frames
+)
 
-# --- Функции-колбэки ---
-def on_file_upload():
-    st.session_state.slice_idx = 0
-    if 'result_image' in st.session_state: del st.session_state.result_image
+# Окна визуализации для КТ (Center, Width)
+CT_WINDOWS = {
+    "Легочное (Lung)": (-600, 1500),
+    "Мягкотканное (Soft Tissue)": (40, 400),
+    "Костное (Bone)": (400, 1800),
+}
 
-def prev_slice():
-    if st.session_state.slice_idx > 0: st.session_state.slice_idx -= 1
-
-def next_slice():
-    if st.session_state.slice_idx < len(st.session_state.frames) - 1: st.session_state.slice_idx += 1
-
-def analyze_mock():
-    st.session_state.result_image = st.session_state.frames[st.session_state.slice_idx]
-
-# --- Функции отрисовки страниц ---
+def reset_session_state():
+    """Сбрасывает состояние сессии при загрузке нового файла."""
+    st.session_state.clear()
 
 def show_preview_page():
-    st.title("🔬 Предпросмотр DICOM файла")
-    col_upload, _ = st.columns(2);
-    with col_upload:
-        uploaded_file = st.file_uploader("Загрузите DICOM файл", type=None, on_change=on_file_upload)
-        if uploaded_file:
-            with st.expander("Показать метаданные DICOM"):
-                try: ds = pydicom.dcmread(io.BytesIO(uploaded_file.getvalue()), force=True); st.json(get_meta(ds))
-                except Exception: st.error("Не удалось извлечь метаданные.")
-    
-    if uploaded_file:
-        try:
-            st.divider(); ds = pydicom.dcmread(io.BytesIO(uploaded_file.getvalue()), force=True); ds.file_meta.TransferSyntaxUID = pydicom.uid.ImplicitVRLittleEndian; st.session_state.frames = normalize_dicom_and_get_frames(ds)
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                st.subheader(f"Предпросмотр ({st.session_state.slice_idx + 1}/{len(st.session_state.frames)})")
-                with st.container(border=True):
-                    st.image(to_uint8(st.session_state.frames[st.session_state.slice_idx]), caption=uploaded_file.name, use_container_width=True)
-                if len(st.session_state.frames) > 1:
-                    btn_cols = st.columns([1, 3, 1]); btn_cols[0].button("◀", on_click=prev_slice, use_container_width=True); btn_cols[2].button("▶", on_click=next_slice, use_container_width=True); btn_cols[1].slider("Срез", 0, len(st.session_state.frames) - 1, key="slice_idx", label_visibility="collapsed")
-                st.button("Анализировать", type="primary", use_container_width=True, on_click=analyze_mock)
-            
-            # ИСПРАВЛЕНО: Возвращаем st.container(border=True)
-            if 'result_image' in st.session_state:
-                with col2:
-                    st.subheader("Результат")
-                    with st.container(border=True): # <--- ВОТ ЗДЕСЬ
-                        st.image(to_uint8(st.session_state.result_image), caption="Результат (заглушка)", use_container_width=True)
-                with col3:
-                    st.subheader("Заключение")
-                    with st.container(border=True): # <--- И ВОТ ЗДЕСЬ
-                        st.info("Здесь появится текстовое заключение модели (заглушка).")
+    st.title("🔬 Превью исследования")
 
-        except Exception as e: st.error(f"Не удалось обработать DICOM файл: {e}")
+    # Создаем две колонки для управления и для будущих элементов
+    col1, col2 = st.columns([1, 1])
+
+    with col1:
+        # --- ЭТАП 1: Загрузка файла ---
+        st.subheader("Шаг 1: Загрузите файл")
+        uploaded_file = st.file_uploader(
+            "Загрузите файл исследования (.zip, .dcm, .nii, .nii.gz)",
+            type=["zip", "dcm", "nii", "gz"],
+            on_change=reset_session_state,
+            label_visibility="collapsed"
+        )
+
+        if not uploaded_file:
+            return
+
+        # --- ЭТАП 2: Обработка данных ---
+        st.subheader("Шаг 2: Обработайте данные")
+        if 'processed_data' not in st.session_state:
+            if st.button("Обработать файл", type="primary"):
+                # Используем st.status для отображения прогресса
+                with st.status("Идет обработка...", expanded=True) as status:
+                    data = process_uploaded_file(uploaded_file, status)
+                    if data:
+                        st.session_state.processed_data = data
+                        # Сохраняем статус для отображения в expander
+                        st.session_state.processing_status = "complete"
+                        status.update(label="Обработка завершена!", state="complete", expanded=False)
+                    else:
+                        st.session_state.processing_status = "error"
+                        status.update(label="Ошибка обработки!", state="error", expanded=True)
+                st.rerun()
+            return
+        
+        # Показываем свернутый лог после обработки
+        if st.session_state.get("processing_status") == "complete":
+            with st.expander("Лог обработки", expanded=False):
+                st.success("Обработка успешно завершена.")
+        elif st.session_state.get("processing_status") == "error":
+            with st.expander("Лог обработки", expanded=True):
+                st.error("В процессе обработки произошла ошибка.")
+
+
+        # --- ЭТАП 3: Проверка и визуализация ---
+        st.subheader("Шаг 3: Проверьте данные и запустите анализ")
+        
+        series_uids = list(st.session_state.processed_data.keys())
+        selected_uid = st.selectbox(
+            "Выберите серию для анализа:", series_uids, key='series_uid',
+            format_func=lambda uid: f"Серия ...{uid[-12:]}"
+        ) if len(series_uids) > 1 else series_uids[0]
+        if not selected_uid: selected_uid = series_uids[0]
+        
+        series = st.session_state.processed_data[selected_uid]
+        meta = series["meta"]
+
+        # Чек-лист и метаданные в скрытых блоках
+        with st.expander("Чек-лист валидации"):
+            validation_results = validate_series(meta)
+            validation_results[3]['status'] = len(series_uids) == 1
+            all_valid = all(check['status'] for check in validation_results)
+            for check in validation_results:
+                st.caption(f"{'✅' if check['status'] else '❌'} {check['text']}")
+            if all_valid: st.success("Все проверки пройдены!") 
+            else: st.warning("Найдены несоответствия.")
+
+        with st.expander("Метаданные"):
+            st.json(meta)
+
+        # Управление визуализацией
+        if meta.get("Modality") == "CT":
+            st.subheader("Окно визуализации")
+            with st.container(border=True):
+                viz_cols = st.columns([3, 1])
+                with viz_cols[0]:
+                    st.selectbox("Окно:", options=list(CT_WINDOWS.keys()), key='window_selection_temp', label_visibility="collapsed")
+                with viz_cols[1]:
+                    if st.button("Показать", type="primary", use_container_width=True):
+                        st.session_state.show_visualization = True
+                        st.session_state.active_window_name = st.session_state.window_selection_temp
+        else:
+            if 'show_visualization' not in st.session_state:
+                st.session_state.show_visualization = True
+                st.session_state.active_window_name = "NIfTI"
+
+    # Блок визуализации (вне колонок, чтобы был на всю ширину)
+    if st.session_state.get('show_visualization'):
+        num_frames = meta['num_frames']
+        if 'slice_idx' not in st.session_state: st.session_state.slice_idx = 0
+        active_window = st.session_state.get('active_window_name', list(CT_WINDOWS.keys())[0])
+
+        uint8_frames = precompute_uint8_frames(selected_uid, active_window, CT_WINDOWS)
+        gif_bytes = create_gif_from_frames(selected_uid, active_window, CT_WINDOWS)
+
+        vis_col1, vis_col2, vis_col3 = st.columns(3)
+        with vis_col1:
+            st.subheader("Анимация")
+            st.image(gif_bytes, use_container_width=True)
+        with vis_col2:
+            st.subheader("Предпросмотр среза")
+            st.image(uint8_frames[st.session_state.slice_idx], use_container_width=True)
+            st.slider("Срез", 0, num_frames - 1, key='slice_idx', label_visibility="collapsed")
+            st.caption(f"Показан: {st.session_state.slice_idx + 1}/{num_frames}")
+        with vis_col3:
+            st.subheader("Найденные патологии")
+            if 'pathology_indices' not in st.session_state:
+                if st.button("Найти патологии", use_container_width=True):
+                    predictions = run_pathology_inference(model, series["frames"])
+                    st.session_state.pathology_indices = [i for i, pred in enumerate(predictions) if pred]
+                    st.rerun()
+                st.info("Нажмите кнопку для запуска ML-анализа.")
+            elif not st.session_state.pathology_indices:
+                st.success("Патологий не найдено.", icon="✅")
+            else:
+                pathology_indices = st.session_state.pathology_indices
+                st.error(f"Найдено на {len(pathology_indices)} срезах:", icon="⚠️")
+                slice_numbers_str = ", ".join([str(i + 1) for i in pathology_indices])
+                st.markdown("**Номера срезов:**")
+                st.text(slice_numbers_str)
 
 def show_batch_page():
-    st.title("📦 Пакетная обработка DICOM")
-    
-    col1, _ = st.columns(2)
+    st.title("📦 Пакетная обработка")
+
+    # Создаем две колонки, чтобы ограничить ширину виджетов
+    col1, col2 = st.columns([1, 1])
+
     with col1:
         uploaded_files = st.file_uploader(
-            "Загрузите DICOM файлы", type=None, accept_multiple_files=True, key="batch_uploader"
+            "Загрузите файлы (.zip, .dcm, .nii, .nii.gz)",
+            type=["zip", "dcm", "nii", "gz"], accept_multiple_files=True,
+            label_visibility="collapsed"
         )
-        
-        if uploaded_files:
-            total_size_mb = sum(f.size for f in uploaded_files) / (1024 * 1024)
-            st.info(f"Загружено файлов: {len(uploaded_files)} (Общий объем: {total_size_mb:.2f} МБ)")
-            
-            btn_col1, btn_col2 = st.columns(2)
-            with btn_col1:
-                if st.button("Сформировать CSV", type="primary", use_container_width=True):
-                    csv_data = []; fieldnames = ['filename', 'modality', 'pixel_spacing', 'slice_thickness', 'num_frames']
-                    progress_bar = st.progress(0, text="Идет обработка...")
-                    for i, file in enumerate(uploaded_files):
-                        try:
-                            ds = pydicom.dcmread(io.BytesIO(file.getvalue()), force=True); frames = normalize_dicom_and_get_frames(ds)
-                            csv_data.append({'filename': file.name, 'modality': getattr(ds, "Modality", "N/A"), 'pixel_spacing': str(getattr(ds, "PixelSpacing", "N/A")), 'slice_thickness': str(getattr(ds, "SliceThickness", "N/A")), 'num_frames': len(frames)})
-                        except Exception: pass
-                        progress_bar.progress((i + 1) / len(uploaded_files), text=f"Обработка {file.name}")
-                    progress_bar.empty(); st.session_state.result_df = pd.DataFrame(csv_data, columns=fieldnames)
-            
-            with btn_col2:
-                if 'result_df' in st.session_state:
-                    csv_string = st.session_state.result_df.to_csv(index=False).encode('utf-8')
-                    st.download_button("Скачать CSV", csv_string, "data_info.csv", "text/csv", use_container_width=True)
-            
-    if 'result_df' in st.session_state and not st.session_state.result_df.empty:
+
+        if not uploaded_files: return
+
+        # Создаем колонки для кнопок
+        button_col1, button_col2 = st.columns(2)
+
+        with button_col1:
+            if st.button("Обработать и сформировать CSV", type="primary", use_container_width=True):
+                csv_data = []
+                fieldnames = [
+                    'archive_name', 'series_uid', 'source_format', 'modality', 
+                    'is_valid', 'orientation', 'missing_slices', 'num_frames',
+                    'has_pathology', 'pathology_slice_count'
+                ]
+                
+                progress_bar = st.progress(0, "Начало обработки...")
+                for i, file in enumerate(uploaded_files):
+                    progress_text = f"Анализ файла {i+1}/{len(uploaded_files)}: {file.name}..."
+                    progress_bar.progress((i) / len(uploaded_files), text=progress_text)
+                    
+                    class DummyStatus:
+                        def write(self, *args, **kwargs): pass
+                    
+                    dummy_status = DummyStatus()
+                    
+                    from utils import _process_dicom_zip, _process_multiframe_dicom, _process_nifti_file
+                    filename = file.name.lower()
+                    series_data = {}
+                    if filename.endswith(".zip"): series_data = _process_dicom_zip(file, dummy_status)
+                    elif filename.endswith(".dcm"): series_data = _process_multiframe_dicom(file, dummy_status)
+                    else: series_data = _process_nifti_file(file, dummy_status)
+
+                    if not series_data:
+                        csv_data.append({'archive_name': file.name, 'is_valid': False})
+                        continue
+                    
+                    for series_uid, data in series_data.items():
+                        meta = data['meta']
+                        validation_checks = validate_series(meta)
+                        validation_checks[3]['status'] = len(series_data) == 1
+                        is_valid = all(check['status'] for check in validation_checks)
+
+                        predictions = run_pathology_inference(model, data['frames'])
+                        pathology_count = sum(predictions)
+
+                        csv_data.append({
+                            'archive_name': file.name, 'series_uid': series_uid,
+                            'source_format': meta.get('SourceFormat', 'N/A'),
+                            'modality': meta.get('Modality', 'N/A'),
+                            'is_valid': is_valid,
+                            'orientation': meta.get('orientation', 'N/A'),
+                            'missing_slices': meta.get('missing_slices', 'N/A'),
+                            'num_frames': meta.get('num_frames', 'N/A'),
+                            'has_pathology': pathology_count > 0,
+                            'pathology_slice_count': pathology_count
+                        })
+                
+                progress_bar.progress(1.0, text="Обработка завершена!")
+                st.session_state.result_df = pd.DataFrame(csv_data, columns=fieldnames).fillna("N/A")
+                st.rerun()
+
+        # Кнопка скачивания появляется во второй колонке, если есть результат
+        if 'result_df' in st.session_state:
+            with button_col2:
+                csv_string = st.session_state.result_df.to_csv(index=False).encode('utf-8')
+                st.download_button("Скачать CSV", csv_string, file_name="batch_report.csv", mime="text/csv", use_container_width=True)
+
+    # Таблица с результатами отображается под колонками на всю ширину
+    if 'result_df' in st.session_state:
         st.divider()
-        st.dataframe(st.session_state.result_df.style.set_properties(**{'text-align': 'left'}))
+        st.subheader("Результаты обработки")
+        st.dataframe(st.session_state.result_df)
 
 def show_about_page():
     st.title("ℹ️ О проекте")
-    st.markdown("...") # Ваш текст
+    st.markdown("""
+        **MedScreen** — это интерактивный инструмент для предобработки и анализа медицинских изображений.
+        
+        ### Ключевые технологии:
+        - **Streamlit:** Создание интерактивного веб-интерфейса.
+        - **Pydicom, Nibabel:** Чтение и парсинг DICOM и NIfTI файлов.
+        - **Numpy:** Обработка изображений и манипуляции с пиксельными данными.
+        - **Pandas:** Работа с табличными данными и генерация CSV.
+        - **Imageio:** Создание анимированных GIF.
+    """)
+    st.warning("> ⚠️ **Внимание:** Прототип не предназначен для клинического применения.")

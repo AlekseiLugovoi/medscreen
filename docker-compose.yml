@@ -1,0 +1,15 @@
+version: '3.8'
+
+services:
+  medscreen:
+    image: medscreen
+    build: .
+    container_name: medscreen-app
+    ports:
+      - "8501:8501"
+    environment:
+      - PYTHONUNBUFFERED=1
+      - NVIDIA_VISIBLE_DEVICES=all
+      - HUGGING_FACE_HUB_TOKEN=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
+    restart: unless-stopped
+    runtime: nvidia
