@@ -10,6 +10,5 @@ services:
     environment:
       - PYTHONUNBUFFERED=1
       - NVIDIA_VISIBLE_DEVICES=all
-      - HUGGING_FACE_HUB_TOKEN=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
     restart: unless-stopped
     runtime: nvidia

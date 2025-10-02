@@ -9,36 +9,41 @@
 
 ### Local Setup
 
-Clone the Repository
-```sh
-git clone https://github.com/AlekseiLugovoi/medscreen.git
-```
+1.  **Клонируйте репозиторий:**
+    ```sh
+    git clone https://github.com/AlekseiLugovoi/medscreen.git
+    cd medscreen
+    ```
 
-<details>
-    <summary>Run Conda</summary>
+2.  **Запустите приложение (выберите один из способов):**
+    <details>
+        <summary>Запуск через Docker (рекомендуется)</summary>
 
-```sh
-ENV=medscreen
-PY_VERSION=3.11
-conda create -n $ENV python=$PY_VERSION --yes
+    ```sh
+    # Сборка и запуск контейнера
+    docker-compose up --build
+    ```
+    Сервис будет доступен по адресу `http://localhost:8501`.
 
-conda activate $ENV
-pip install -r requirements.txt
-```
-```sh
-streamlit run app/main.py
-```
+    </details>
+    <details>
+        <summary>Запуск через Conda</summary>
 
-</details>
+    ```sh
+    # Создание и активация окружения
+    conda create -n medscreen python=3.11 --yes
+    conda activate medscreen
 
-<details>
-    <summary>Run Docker</summary>
+    # Установка зависимостей
+    pip install -r requirements.txt
 
-```sh
-docker-compose up
-```
+    # Запуск приложения
+    streamlit run app/main.py
+    ```
+    </details>
 
-</details>
+3.  **Протестируйте сервис:**
+    - Для проверки работоспособности используйте [**демо-данные**](https://disk.yandex.ru/d/2ddI6aLMkoIYrA).
 
 ## 📥 Поддерживаемые форматы
 
@@ -101,5 +106,4 @@ docker-compose up
 
 ## 🔗 Ссылки
 
-- **Веса модели:** [Ссылка на ваш лендинг]
-- **Презентация проекта:** [Ссылка на вашу презентацию]
+- **Презентация Проекта:** https://disk.yandex.ru/d/LpKu44Kq0Xa_0w
