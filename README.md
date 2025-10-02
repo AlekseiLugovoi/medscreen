@@ -8,6 +8,7 @@
 👉 [Запустить онлайн](https://d848d1e027dd94c969d950ddf81efe6c9.clg07azjl.paperspacegradient.com)  
 
 ### Local Setup
+Добавить свой HF_TOKEN или наш (hf _wogByeTznWSXdoqfBBuSkjniHCZnNPJWOy) в docker-compose
 
 1.  **Клонируйте репозиторий:**
     ```sh

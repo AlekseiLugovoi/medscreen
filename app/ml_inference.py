@@ -5,12 +5,6 @@ import torch
 from PIL import Image
 from open_clip import create_model_and_transforms, get_tokenizer
 
-<<<<<<< HEAD
-=======
-# import os
-# os.environ["HF_TOKEN"] = "" # Public
-
->>>>>>> 80cab49 (Refactoring)
 # --- ЛОГИРОВАНИЕ ---
 model_logger = logging.getLogger('model_logger')
 model_logger.setLevel(logging.INFO)
