@@ -8,7 +8,6 @@
 👉 [Запустить онлайн](https://d848d1e027dd94c969d950ddf81efe6c9.clg07azjl.paperspacegradient.com)  
 
 ### Local Setup
-Добавить свой HF_TOKEN или наш (hf _wogByeTznWSXdoqfBBuSkjniHCZnNPJWOy) в docker-compose
 
 1.  **Клонируйте репозиторий:**
     ```sh
@@ -17,8 +16,15 @@
     ```
 
 2.  **Запустите приложение (выберите один из способов):**
+
     <details>
         <summary>Запуск через Docker (рекомендуется)</summary>
+
+    ```sh
+    # Создайте файл .env рядом с docker-compose.yml 
+    # (или воспользуйтесь нашим: hf _wogByeTznWSXdoqfBBuSkjniHCZnNPJWOy)
+    echo "HF_TOKEN=ваш_huggingface_token" > .env
+    ```
 
     ```sh
     # Сборка и запуск контейнера
@@ -27,6 +33,7 @@
     Сервис будет доступен по адресу `http://localhost:8501`.
 
     </details>
+
     <details>
         <summary>Запуск через Conda</summary>
 
@@ -108,3 +115,4 @@
 ## 🔗 Ссылки
 
 - **Презентация Проекта:** https://disk.yandex.ru/d/LpKu44Kq0Xa_0w
+- **Онлайн сервис:** https://d75658572430f4f78b2972d1c74f592ca.clg07azjl.paperspacegradient.com

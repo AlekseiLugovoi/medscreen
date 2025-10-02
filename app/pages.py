@@ -191,7 +191,7 @@ def show_batch_page():
                 fieldnames = [
                     'archive_name', 'series_uid', 'source_format', 'modality',
                     'is_valid', 'body_part', 'orientation', 'num_frames',
-                    'has_pathology', 'pathology_slice_count'
+                    'has_pathology', 'pathology_slice_count', 'prediction'
                 ]
                 
                 model = get_model()
@@ -213,7 +213,11 @@ def show_batch_page():
                         is_valid = all(check['status'] for check in validation_checks)
 
                         predictions = run_pathology_inference(model, data['frames'])
-                        pathology_count = sum(predictions)
+                        # Считаем срезы, где вероятность > 0.5
+                        pathology_slices = [p for p in predictions if p > 0.5]
+                        pathology_count = len(pathology_slices)
+                        # Итоговая вероятность - максимальная по всем срезам
+                        max_prediction = max(predictions) if predictions else 0.0
 
                         csv_data.append({
                             'archive_name': file.name,
@@ -225,7 +229,8 @@ def show_batch_page():
                             'orientation': meta.get('orientation', 'N/A'),
                             'num_frames': meta.get('num_frames', 'N/A'),
                             'has_pathology': pathology_count > 0,
-                            'pathology_slice_count': pathology_count
+                            'pathology_slice_count': pathology_count,
+                            'prediction': f"{max_prediction:.4f}"
                         })
                 
                 progress_bar.progress(1.0, text="Обработка завершена!")

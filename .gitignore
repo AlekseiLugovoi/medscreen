@@ -1,3 +1,7 @@
+# secrets
+.streamlit/secrets.toml
+.env
+
 # model / model weights
 *.pt
 *.safetensors
