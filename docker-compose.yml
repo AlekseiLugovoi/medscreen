@@ -1,9 +1,10 @@
-version: '3.8'
-
 services:
   medscreen:
     image: medscreen
-    build: .
+    build:
+      context: .
+      secrets:
+        - hf_token_secret
     container_name: medscreen-app
     ports:
       - "8501:8501"
@@ -13,3 +14,7 @@ services:
       - HF_TOKEN=${HF_TOKEN}
     restart: unless-stopped
     runtime: nvidia
+
+secrets:
+  hf_token_secret:
+    file: .env

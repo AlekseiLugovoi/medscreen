@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import time
 from file_io import parse_zip_archive
 from data_validation import validate_series
 from visualization import prepare_frames_for_display, create_gif
@@ -137,21 +138,37 @@ def show_preview_page():
 
         with vis_col3:
             st.subheader("Найденные патологии")
-            if 'pathology_indices' not in st.session_state:
+            if 'pathology_results' not in st.session_state:
                 if st.button("Найти патологии", type="primary", use_container_width=True):
                     model = get_model()
-                    predictions = run_pathology_inference(model, series_data["frames"])
-                    st.session_state.pathology_indices = [i for i, pred in enumerate(predictions) if pred]
+                    results = run_pathology_inference(model, series_data["frames"])
+                    
+                    # --- ИСПРАВЛЕНИЕ: Добавляем ту же логику, что и в пакетной обработке ---
+                    preds = results.get('preds', [])
+                    raw_probs = results.get('raw_probs', [])
+                    st.session_state.has_pathology_flag = any(preds)
+                    st.session_state.max_prob = max(raw_probs) if raw_probs else 0.0
+                    # --- Конец исправления ---
+
+                    st.session_state.pathology_results = results
                     st.rerun()
                 st.info("Нажмите кнопку для запуска ML-анализа.")
-            elif not st.session_state.pathology_indices:
-                st.success("Патологий не найдено.", icon="✅")
+            
             else:
-                pathology_indices = st.session_state.pathology_indices
-                st.error(f"Найдено на {len(pathology_indices)} срезах:", icon="⚠️")
-                slice_numbers_str = ", ".join([str(i + 1) for i in pathology_indices])
-                st.markdown("**Номера срезов:**")
-                st.text_area("Срезы с патологией", value=slice_numbers_str, height=100, disabled=True)
+                # --- ИСПРАВЛЕНИЕ: Используем сохраненные флаги ---
+                has_pathology = st.session_state.get('has_pathology_flag', False)
+                max_prob = st.session_state.get('max_prob', 0.0)
+
+                if not has_pathology:
+                    st.success("Патологий не найдено.", icon="✅")
+                    st.caption(f"Максимальная вероятность: {max_prob:.4f}")
+                else:
+                    pathology_indices = [i for i, pred in enumerate(st.session_state.pathology_results['preds']) if pred]
+                    st.error(f"Найдено на {len(pathology_indices)} срезах:", icon="⚠️")
+                    st.caption(f"Максимальная вероятность: {max_prob:.4f}")
+                    slice_numbers_str = ", ".join([str(i + 1) for i in pathology_indices])
+                    st.markdown("**Номера срезов:**")
+                    st.text_area("Срезы с патологией", value=slice_numbers_str, height=100, disabled=True)
 
 
 def show_batch_page():
@@ -188,10 +205,12 @@ def show_batch_page():
         with button_col1:
             if st.button("Обработать и сформировать CSV", type="primary", use_container_width=True):
                 csv_data = []
+                # --- ИСПРАВЛЕНИЕ: Упрощаем колонки времени ---
                 fieldnames = [
                     'archive_name', 'series_uid', 'source_format', 'modality',
-                    'is_valid', 'body_part', 'orientation', 'num_frames',
-                    'has_pathology', 'pathology_slice_count', 'prediction'
+                    'body_part', 'orientation', 'num_frames',
+                    'is_valid', 'has_pathology', 'pred_pathology', 
+                    'processing_time' # <-- Оставляем только одну колонку времени
                 ]
                 
                 model = get_model()
@@ -212,25 +231,28 @@ def show_batch_page():
                         validation_checks = validate_series(meta)
                         is_valid = all(check['status'] for check in validation_checks)
 
-                        predictions = run_pathology_inference(model, data['frames'])
-                        # Считаем срезы, где вероятность > 0.5
-                        pathology_slices = [p for p in predictions if p > 0.5]
-                        pathology_count = len(pathology_slices)
-                        # Итоговая вероятность - максимальная по всем срезам
-                        max_prediction = max(predictions) if predictions else 0.0
+                        if is_valid and len(data['frames']) > 0:
+                            inference_results = run_pathology_inference(model, data['frames'])
+                            has_pathology_flag = inference_results.get('study_has_pathology', False)
+                            final_prob = inference_results.get('study_prob_pathology', 0.0)
+                            ml_time = inference_results.get('study_processing_time', 0.0)
+                        else:
+                            has_pathology_flag = False
+                            final_prob = 0.0
+                            ml_time = 0.0
 
                         csv_data.append({
                             'archive_name': file.name,
                             'series_uid': series_uid,
                             'source_format': meta.get('SourceFormat', 'N/A'),
                             'modality': meta.get('Modality', 'N/A'),
-                            'is_valid': is_valid,
                             'body_part': meta.get('BodyPartExamined', 'N/A'),
                             'orientation': meta.get('orientation', 'N/A'),
                             'num_frames': meta.get('num_frames', 'N/A'),
-                            'has_pathology': pathology_count > 0,
-                            'pathology_slice_count': pathology_count,
-                            'prediction': f"{max_prediction:.4f}"
+                            'is_valid': is_valid,
+                            'has_pathology': has_pathology_flag,
+                            'pred_pathology': f"{final_prob:.4f}",
+                            'ml_processing_time': f"{ml_time:.2f}s"
                         })
                 
                 progress_bar.progress(1.0, text="Обработка завершена!")

@@ -3,23 +3,21 @@ streamlit==1.49.1
 
 # Medical Imaging & Data Processing
 imageio==2.36.0
-numpy==2.1.2
-pandas==2.2.2
-Pillow==9.4.0
+numpy==1.26.4
+pandas==2.2.3
+Pillow==11.2.1
 pydicom==3.0.1
 SimpleITK==2.5.2
 nibabel==5.3.2
 
 # Utilities & Visualization
 matplotlib==3.9.2
-tqdm==4.66.5
-
+tqdm==4.67.1
 
 # ML
 transformers==4.54.1
-torch==2.5.1+cu121
 huggingface_hub==0.34.3
 accelerate==1.9.0
 bitsandbytes==0.46.1
-open-clip-torch==3.1.0
 
+# torch, torchvision, and flash-attn are installed separately in Dockerfile
