@@ -19,9 +19,9 @@ RUN pip install --no-cache-dir torch==2.6.0+cu124 torchvision==0.21.0+cu124 --in
 RUN pip install --no-cache-dir -r requirements.txt
 
 # --- Предварительное скачивание модели ---
-# ИСПРАВЛЕНИЕ: используем правильный тип pipeline
-RUN --mount=type=secret,id=HF_TOKEN,dst=/run/secrets/hf_token.env \
-    export HF_TOKEN=$(grep "^HF_TOKEN=" /run/secrets/hf_token.env | cut -d= -f2) && \
+# ИСПРАВЛЕНИЕ: Упрощаем чтение секрета для совместимости с GitHub Actions
+RUN --mount=type=secret,id=HF_TOKEN,dst=/run/secrets/hf_token \
+    export HF_TOKEN=$(cat /run/secrets/hf_token) && \
     python -c "from transformers import pipeline; pipeline('image-text-to-text', model='google/medgemma-4b-it', model_kwargs={'torch_dtype': 'bfloat16'})"
 
 # --- Этап 2: Финальный образ ---

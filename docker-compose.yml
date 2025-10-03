@@ -1,6 +1,6 @@
 services:
   medscreen:
-    image: medscreen
+    image: medscreen:latest # Указываем тег
     build:
       context: .
       secrets:
@@ -16,7 +16,7 @@ services:
     runtime: nvidia
 
   medscreen-api:
-    image: medscreen
+    image: medscreen:latest # Используем уже собранный образ
     container_name: medscreen-api
     ports:
       - "8502:8502"

@@ -210,7 +210,7 @@ def show_batch_page():
                     'archive_name', 'series_uid', 'source_format', 'modality',
                     'body_part', 'orientation', 'num_frames',
                     'is_valid', 'has_pathology', 'pred_pathology', 
-                    'processing_time' # <-- Оставляем только одну колонку времени
+                    'ml_processing_time' # <-- Оставляем только одну колонку времени
                 ]
                 
                 model = get_model()
