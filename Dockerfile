@@ -19,10 +19,10 @@ RUN pip install --no-cache-dir torch==2.6.0+cu124 torchvision==0.21.0+cu124 --in
 RUN pip install --no-cache-dir -r requirements.txt
 
 # --- Предварительное скачивание модели ---
-# ИСПРАВЛЕНИЕ: Упрощаем чтение секрета для совместимости с GitHub Actions
-RUN --mount=type=secret,id=HF_TOKEN,dst=/run/secrets/hf_token \
-    export HF_TOKEN=$(cat /run/secrets/hf_token) && \
-    python -c "from transformers import pipeline; pipeline('image-text-to-text', model='google/medgemma-4b-it', model_kwargs={'torch_dtype': 'bfloat16'})"
+# ЭТОТ БЛОК НУЖНО ПОЛНОСТЬЮ УДАЛИТЬ
+# RUN --mount=type=secret,id=HF_TOKEN,dst=/run/secrets/hf_token \
+#     export HF_TOKEN=$(cat /run/secrets/hf_token) && \
+#     python -c "from transformers import pipeline; pipeline('image-text-to-text', model='google/medgemma-4b-it', model_kwargs={'torch_dtype': 'bfloat16'})"
 
 # --- Этап 2: Финальный образ ---
 FROM nvidia/cuda:12.4.1-runtime-ubuntu22.04
