@@ -4,7 +4,7 @@ services:
     build:
       context: .
       secrets:
-        - hf_token_secret
+        - HF_TOKEN
     container_name: medscreen-app
     ports:
       - "8501:8501"
@@ -15,6 +15,19 @@ services:
     restart: unless-stopped
     runtime: nvidia
 
+  medscreen-api:
+    image: medscreen
+    container_name: medscreen-api
+    ports:
+      - "8502:8502"
+    environment:
+      - PYTHONUNBUFFERED=1
+      - NVIDIA_VISIBLE_DEVICES=all
+      - HF_TOKEN=${HF_TOKEN}
+    restart: unless-stopped
+    runtime: nvidia
+    command: ["uvicorn", "api:app", "--host", "0.0.0.0", "--port", "8502"]
+
 secrets:
-  hf_token_secret:
+  HF_TOKEN:
     file: .env

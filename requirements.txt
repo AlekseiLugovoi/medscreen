@@ -20,4 +20,8 @@ huggingface_hub==0.34.3
 accelerate==1.9.0
 bitsandbytes==0.46.1
 
+# API
+fastapi==0.112.0
+uvicorn[standard]==0.30.3
+
 # torch, torchvision, and flash-attn are installed separately in Dockerfile

@@ -20,7 +20,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # --- Предварительное скачивание модели ---
 # ИСПРАВЛЕНИЕ: используем правильный тип pipeline
-RUN --mount=type=secret,id=hf_token_secret,dst=/run/secrets/hf_token.env \
+RUN --mount=type=secret,id=HF_TOKEN,dst=/run/secrets/hf_token.env \
     export HF_TOKEN=$(grep "^HF_TOKEN=" /run/secrets/hf_token.env | cut -d= -f2) && \
     python -c "from transformers import pipeline; pipeline('image-text-to-text', model='google/medgemma-4b-it', model_kwargs={'torch_dtype': 'bfloat16'})"
 
@@ -35,10 +35,12 @@ WORKDIR /app
 # Копируем готовое окружение и код приложения
 COPY --from=builder /opt/venv /opt/venv
 COPY app/ ./app/
+COPY api.py .
 COPY .streamlit/ /root/.streamlit/
 
 # Указываем путь к venv и запускаем приложение
 ENV PATH="/opt/venv/bin:$PATH"
 EXPOSE 8501
+EXPOSE 8502
 HEALTHCHECK CMD curl --fail http://localhost:8501/_stcore/health || exit 1
 CMD ["streamlit", "run", "app/main.py", "--server.port=8501", "--server.address=0.0.0.0"]
