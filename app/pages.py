@@ -1,10 +1,10 @@
 import streamlit as st
 import pandas as pd
-import time
-from file_io import parse_zip_archive
-from data_validation import validate_series
-from visualization import prepare_frames_for_display, create_gif
-from ml_processing import get_model, run_pathology_inference
+
+from app.file_io import parse_zip_archive
+from app.data_validation import validate_series
+from app.visualization import prepare_frames_for_display, create_gif
+from app.ml_processing import run_inference_via_api
 
 # Окна визуализации для КТ (Center, Width)
 CT_WINDOWS = {
@@ -66,11 +66,17 @@ def show_preview_page():
         if not uploaded_file:
             return
 
+        if 'file_content' not in st.session_state:
+            st.session_state.file_content = uploaded_file.getvalue()
+
         if 'processed_data' not in st.session_state:
             with st.spinner("Идет обработка..."):
-                data, error_message = parse_zip_archive(uploaded_file)
+                # Передаем в парсер содержимое файла, а не сам объект
+                data, error_message = parse_zip_archive(st.session_state.file_content)
                 if error_message:
                     st.error(f"Ошибка чтения архива: {error_message}")
+                    # Очищаем, чтобы можно было попробовать снова с тем же файлом
+                    del st.session_state.file_content
                     return
                 st.session_state.processed_data = data
                 st.rerun()
@@ -140,32 +146,32 @@ def show_preview_page():
             st.subheader("Найденные патологии")
             if 'pathology_results' not in st.session_state:
                 if st.button("Найти патологии", type="primary", use_container_width=True):
-                    model = get_model()
-                    results = run_pathology_inference(model, series_data["frames"])
+                    # ИЗМЕНЕНИЕ: Вызываем API вместо локальной модели
+                    results = run_inference_via_api(
+                        st.session_state.file_content, 
+                        uploaded_file.name
+                    )
                     
-                    # --- ИСПРАВЛЕНИЕ: Добавляем ту же логику, что и в пакетной обработке ---
-                    preds = results.get('preds', [])
-                    raw_probs = results.get('raw_probs', [])
-                    st.session_state.has_pathology_flag = any(preds)
-                    st.session_state.max_prob = max(raw_probs) if raw_probs else 0.0
-                    # --- Конец исправления ---
-
                     st.session_state.pathology_results = results
+                    st.session_state.study_has_pathology = results.get('study_has_pathology', False)
+                    st.session_state.study_prob_pathology = results.get('study_prob_pathology', 0.0)
+                    # --- Конец исправления ---
                     st.rerun()
                 st.info("Нажмите кнопку для запуска ML-анализа.")
             
             else:
-                # --- ИСПРАВЛЕНИЕ: Используем сохраненные флаги ---
-                has_pathology = st.session_state.get('has_pathology_flag', False)
-                max_prob = st.session_state.get('max_prob', 0.0)
+                # --- ИСПРАВЛЕНИЕ: Используем новые флаги из session_state ---
+                has_pathology = st.session_state.get('study_has_pathology', False)
+                final_prob = st.session_state.get('study_prob_pathology', 0.0)
 
                 if not has_pathology:
                     st.success("Патологий не найдено.", icon="✅")
-                    st.caption(f"Максимальная вероятность: {max_prob:.4f}")
+                    st.caption(f"Итоговая вероятность: {final_prob:.4f}")
                 else:
-                    pathology_indices = [i for i, pred in enumerate(st.session_state.pathology_results['preds']) if pred]
+                    # Используем 'pred_slices' для визуализации, а не для принятия решения
+                    pathology_indices = [i for i, pred in enumerate(st.session_state.pathology_results.get('pred_slices', [])) if pred]
                     st.error(f"Найдено на {len(pathology_indices)} срезах:", icon="⚠️")
-                    st.caption(f"Максимальная вероятность: {max_prob:.4f}")
+                    st.caption(f"Итоговая вероятность: {final_prob:.4f}")
                     slice_numbers_str = ", ".join([str(i + 1) for i in pathology_indices])
                     st.markdown("**Номера срезов:**")
                     st.text_area("Срезы с патологией", value=slice_numbers_str, height=100, disabled=True)
@@ -205,22 +211,22 @@ def show_batch_page():
         with button_col1:
             if st.button("Обработать и сформировать CSV", type="primary", use_container_width=True):
                 csv_data = []
-                # --- ИСПРАВЛЕНИЕ: Упрощаем колонки времени ---
                 fieldnames = [
                     'archive_name', 'series_uid', 'source_format', 'modality',
                     'body_part', 'orientation', 'num_frames',
                     'is_valid', 'has_pathology', 'pred_pathology', 
-                    'ml_processing_time' # <-- Оставляем только одну колонку времени
+                    'ml_processing_time'
                 ]
                 
-                model = get_model()
+                # УДАЛЯЕМ: model = get_model()
                 progress_bar = st.progress(0, "Начало обработки...")
                 
                 for i, file in enumerate(uploaded_files):
                     progress_text = f"Анализ файла {i+1}/{len(uploaded_files)}: {file.name}..."
                     progress_bar.progress(i / len(uploaded_files), text=progress_text)
                     
-                    series_data, error_message = parse_zip_archive(file)
+                    # --- ИСПРАВЛЕНИЕ: Передаем байты, а не объект файла ---
+                    series_data, error_message = parse_zip_archive(file.getvalue())
 
                     if not series_data or error_message:
                         csv_data.append({'archive_name': file.name, 'is_valid': False, 'series_uid': error_message or "Parsing error"})
@@ -232,7 +238,8 @@ def show_batch_page():
                         is_valid = all(check['status'] for check in validation_checks)
 
                         if is_valid and len(data['frames']) > 0:
-                            inference_results = run_pathology_inference(model, data['frames'])
+                            # ИЗМЕНЕНИЕ: Вызываем API для каждого файла
+                            inference_results = run_inference_via_api(file.getvalue(), file.name)
                             has_pathology_flag = inference_results.get('study_has_pathology', False)
                             final_prob = inference_results.get('study_prob_pathology', 0.0)
                             ml_time = inference_results.get('study_processing_time', 0.0)

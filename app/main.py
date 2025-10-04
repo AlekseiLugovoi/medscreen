@@ -1,7 +1,7 @@
 # app/main.py
 
 import streamlit as st
-from pages import show_preview_page, show_batch_page, show_about_page, show_api_page
+from app.pages import show_preview_page, show_batch_page, show_about_page, show_api_page
 
 st.set_page_config(page_title="MedScreen", page_icon="🩺", layout="wide")
 

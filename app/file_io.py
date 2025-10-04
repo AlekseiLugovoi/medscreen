@@ -173,12 +173,21 @@ def _parse_image_series(zf, img_files):
     }
     return {series_uid: {"frames": volume, "meta": meta}}, None
 
-def parse_zip_archive(uploaded_file):
+def parse_zip_archive(file_input):
     """Определяет тип данных в ZIP и вызывает соответствующий парсер."""
     try:
-        with zipfile.ZipFile(io.BytesIO(uploaded_file.getvalue())) as zf:
+        if hasattr(file_input, 'read'):
+            file_content = file_input.read()
+        else:
+            file_content = file_input
+
+        # Добавляем проверку размера
+        if len(file_content) > 500 * 1024 * 1024:  # 500MB лимит
+            return None, "Файл слишком большой (>500MB)"
+        
+        with zipfile.ZipFile(io.BytesIO(file_content)) as zf:
             file_list = [f for f in zf.namelist() if not f.startswith('__MACOSX/') and not f.endswith('/')]
-            
+
             if not file_list:
                 return None, "Архив пуст."
 

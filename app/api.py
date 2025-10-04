@@ -1,12 +1,14 @@
-import io
 import pandas as pd
+import io
 from typing import List
 from fastapi import FastAPI, UploadFile, File
 from fastapi.responses import StreamingResponse
 
+# --- ИСПРАВЛЕНИЕ: Правильные импорты ---
 from app.file_io import parse_zip_archive
 from app.data_validation import validate_series
-from app.ml_processing import get_model, run_pathology_inference
+from app.ml_inference import PathologyClassifier, model_logger, get_gpu_memory_usage_str
+# --- КОНЕЦ ИСПРАВЛЕНИЯ ---
 
 app = FastAPI(
     title="MedScreen API",
@@ -15,7 +17,48 @@ app = FastAPI(
 )
 
 # Загружаем модель при старте, чтобы она была готова к использованию
-model = get_model()
+model = PathologyClassifier()
+
+
+@app.post("/api/v1/process_single", tags=["Processing"])
+async def process_single_archive(file: UploadFile = File(...)):
+    """
+    Принимает один ZIP-архив, проводит полный анализ (валидация + ML)
+    и возвращает результат в виде JSON.
+    """
+    # --- ИСПРАВЛЕНИЕ: Используем file.file для передачи файлового объекта ---
+    series_data, error_message = parse_zip_archive(file.file)
+
+    if not series_data or error_message:
+        return {"error": error_message or "Parsing error"}
+
+    # Берем первую серию
+    series_uid = list(series_data.keys())[0]
+    data = series_data[series_uid]
+    meta = data['meta']
+    
+    validation_checks = validate_series(meta)
+    is_valid = all(check['status'] for check in validation_checks)
+
+    if is_valid and len(data['frames']) > 0:
+        model_logger.info(f"Запуск инференса для {file.filename}. {get_gpu_memory_usage_str()}")
+        # --- ИСПРАВЛЕНИЕ: Вызываем метод модели ---
+        inference_results = model.run_inference(data['frames'])
+        model_logger.info(f"Инференс завершен. {get_gpu_memory_usage_str()}")
+    else:
+        inference_results = {
+            'study_has_pathology': False,
+            'study_prob_pathology': 0.0,
+            'study_processing_time': 0.0,
+            'pred_slices': []
+        }
+
+    return {
+        "validation_passed": is_valid,
+        "validation_checks": validation_checks,
+        "inference_results": inference_results
+    }
+
 
 @app.post("/api/v1/upload", tags=["Processing"])
 async def process_archives(files: List[UploadFile] = File(...)):
@@ -31,7 +74,8 @@ async def process_archives(files: List[UploadFile] = File(...)):
     ]
 
     for file in files:
-        series_data, error_message = parse_zip_archive(file)
+        # --- ИСПРАВЛЕНИЕ: Используем file.file ---
+        series_data, error_message = parse_zip_archive(file.file)
 
         if not series_data or error_message:
             csv_data.append({'archive_name': file.filename, 'is_valid': False, 'series_uid': error_message or "Parsing error"})
@@ -43,7 +87,8 @@ async def process_archives(files: List[UploadFile] = File(...)):
             is_valid = all(check['status'] for check in validation_checks)
 
             if is_valid and len(data['frames']) > 0:
-                inference_results = run_pathology_inference(model, data['frames'])
+                # --- ИСПРАВЛЕНИЕ: Вызываем метод модели ---
+                inference_results = model.run_inference(data['frames'])
                 has_pathology_flag = inference_results.get('study_has_pathology', False)
                 final_prob = inference_results.get('study_prob_pathology', 0.0)
                 ml_time = inference_results.get('study_processing_time', 0.0)

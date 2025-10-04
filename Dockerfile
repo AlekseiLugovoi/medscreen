@@ -30,17 +30,26 @@ FROM nvidia/cuda:12.4.1-runtime-ubuntu22.04
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y python3.11 curl && rm -rf /var/lib/apt/lists/*
 
+# --- ИСПРАВЛЕНИЕ: Основная рабочая директория ---
 WORKDIR /app
 
-# Копируем готовое окружение и код приложения
+# Копируем готовое окружение
 COPY --from=builder /opt/venv /opt/venv
-COPY app/ ./app/
-COPY api.py .
-COPY .streamlit/ /root/.streamlit/
 
-# Указываем путь к venv и запускаем приложение
+# Копируем код приложения
+COPY ./app ./app
+COPY ./.streamlit ./app/.streamlit
+COPY requirements.txt .
+
+# Указываем путь к venv
 ENV PATH="/opt/venv/bin:$PATH"
+
+# Открываем порты
 EXPOSE 8501
 EXPOSE 8502
+
+# Проверка состояния для Streamlit
 HEALTHCHECK CMD curl --fail http://localhost:8501/_stcore/health || exit 1
+
+# --- ИСПРАВЛЕНИЕ: Команда по умолчанию для Streamlit ---
 CMD ["streamlit", "run", "app/main.py", "--server.port=8501", "--server.address=0.0.0.0"]

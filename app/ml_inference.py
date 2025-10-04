@@ -21,6 +21,7 @@ import torch
 from PIL import Image
 from transformers import pipeline
 from typing import Dict, List, Any
+import re
 
 # --- ЛОГИРОВАНИЕ ---
 model_logger = logging.getLogger('model_logger')
@@ -64,117 +65,106 @@ class PathologyClassifier:
     def __init__(self, model_name: str = "google/medgemma-4b-it"):
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.torch_dtype = torch.bfloat16 if self.device == "cuda" else torch.float32
+        
+        start_time = time.time()
         model_logger.info(f"Инициализация модели '{model_name}' на устройстве: {self.device}")
 
         try:
-            # ИСПРАВЛЕНИЕ: используем правильный тип pipeline как у коллеги
             self.pipe = pipeline(
-                "image-text-to-text",  # Не "image-to-text"!
+                "image-text-to-text",
                 model=model_name,
                 model_kwargs={"torch_dtype": self.torch_dtype},
-                device=self.device,
+                device=self.device
             )
-            model_logger.info("Модель MedGemma успешно загружена.")
+            init_time = time.time() - start_time
+            model_logger.info(f"Модель инициализирована за {init_time:.1f}с")
         except Exception as e:
-            model_logger.error(f"Критическая ошибка загрузки модели MedGemma: {e}")
+            model_logger.error(f"Ошибка инициализации модели: {e}")
             raise
 
-        # ИСПРАВЛЕНИЕ: используем тот же промпт что и у коллеги
-        self.prompt = """Task: classify chest CT scan for pulmonary abnormalities.
+        # --- ИЗМЕНЕНИЕ: Промпт от коллеги ---
+        self.user_prompt = """Task: classify chest CT scan for pulmonary abnormalities.
 Steps:
 1) Examine both lungs for opacities, consolidations, ground-glass changes, pleural effusion, pneumothorax, fibrosis, or nodules.
 2) If no abnormalities are visible, output label: normal.
 3) If any abnormality is suspected, output label: anomaly.
 4) Output format:
    - label: normal OR label: anomaly"""
-        
-    def _prepare_slice(self, slice_2d: np.ndarray) -> Image.Image:
-        center, width = -600, 1500
-        lo, hi = center - width / 2.0, center + width / 2.0
-        img_windowed = np.clip(slice_2d, lo, hi)
-        img_normalized = (img_windowed - lo) / (hi - lo + 1e-6)
-        img_uint8 = (img_normalized * 255.0).astype(np.uint8)
-        return Image.fromarray(img_uint8, mode="L").convert("RGB")
+        self.system_prompt = "You are an expert radiologist."
 
-    # --- ИЗМЕНЕННАЯ ЛОГИКА ---
+    def _prepare_slice(self, slice_2d: np.ndarray) -> Image.Image:
+        """Конвертирует 2D срез в PIL Image."""
+        # Применяем легочное окно, как в скрипте коллеги
+        center, width = -600, 1500
+        lo, hi = center - width / 2, center + width / 2
+        slice_2d = np.clip(slice_2d, lo, hi)
+        slice_2d = (slice_2d - lo) / (hi - lo + 1e-6)
+        
+        # Нормализуем в uint8
+        slice_2d = np.clip(slice_2d, 0, 1)
+        img_array = (slice_2d * 255).astype(np.uint8)
+        return Image.fromarray(img_array).convert("L")
+
     @torch.inference_mode()
     def run_inference(self, volume_3d: np.ndarray, threshold: float = 0.1) -> Dict[str, Any]:
-        start_time = time.perf_counter()
-        if torch.cuda.is_available(): 
-            torch.cuda.reset_peak_memory_stats()
-
-        n_slices = volume_3d.shape[0]
-        model_logger.info(f"Инференс стартовал для {n_slices} срезов. {get_gpu_memory_usage_str()}")
-
-        step = select_step(n_slices)
-        indices_to_check = quartile_sample_indices(n_slices, step)
-        images_to_check = [self._prepare_slice(volume_3d[i]) for i in indices_to_check]
-
-        # Этап 1: Сбор "голосов" от модели (как у коллеги)
-        counts = {"normal": 0, "anomaly": 0}
-        slice_labels = {} # Сохраняем метку для каждого среза
-
-        for i, image in enumerate(images_to_check):
-            slice_idx = indices_to_check[i]
-            try:
-                messages = [
-                    {"role": "system", "content": [{"type": "text", "text": "You are an expert radiologist."}]},
-                    {"role": "user", "content": [{"type": "text", "text": self.prompt}, {"type": "image", "image": image}]}
-                ]
-                output = self.pipe(text=messages, max_new_tokens=256)
-                
-                if isinstance(output, list) and len(output) > 0:
-                    generated_text = output[0]["generated_text"][-1]["content"]
-                    label = "unknown"
-                    try:
-                        parsed_label = generated_text.split("label:")[1].split("\n")[0].strip().lower()
-                        if "anomaly" in parsed_label:
-                            label = "anomaly"
-                        elif "normal" in parsed_label:
-                            label = "normal"
-                    except Exception:
-                        pass # label остается "unknown"
-                    
-                    if label in counts:
-                        counts[label] += 1
-                    slice_labels[slice_idx] = label
-
-            except Exception as e:
-                model_logger.warning(f"Ошибка при классификации среза {slice_idx}: {e}")
-
-        # Этап 2: Агрегация и принятие решения (как у коллеги)
-        total_votes = counts["normal"] + counts["anomaly"]
-        final_probability = (counts["anomaly"] / total_votes) if total_votes > 0 else 0.0
+        start_time = time.time()
         
-        has_pathology = final_probability >= threshold
-
-        # Этап 3: Формирование результата
-        preds = [False] * n_slices
-        raw_probs = [0.0] * n_slices # Теперь это просто для информации, не для решения
-
-        if has_pathology:
-            # Если общая вероятность высокая, помечаем все срезы, где модель нашла аномалию
-            for slice_idx, label in slice_labels.items():
-                if label == "anomaly":
-                    # Распространяем на соседние срезы для лучшей визуализации
-                    for j in range(max(0, slice_idx - 1), min(n_slices, slice_idx + 2)):
-                        preds[j] = True
+        # 1. Выборка и подготовка срезов
+        num_total_slices = volume_3d.shape[0]
+        step = select_step(num_total_slices)
+        indices_to_process = quartile_sample_indices(num_total_slices, step)
         
-        # Заполняем raw_probs для отладки
-        for slice_idx, label in slice_labels.items():
-            if label == "anomaly":
-                raw_probs[slice_idx] = 0.9
-            elif label == "normal":
-                raw_probs[slice_idx] = 0.05
+        slices_to_process = [self._prepare_slice(volume_3d[i]) for i in indices_to_process]
 
-        duration = time.perf_counter() - start_time
-        model_logger.info(f"Инференс закончен за {duration:.2f}с. Итоговая вер-ть: {final_probability:.4f}. {get_gpu_memory_usage_str()}")
+        if not slices_to_process:
+            return {
+                'study_has_pathology': False, 'study_prob_pathology': 0.0,
+                'study_processing_time': 0.0, 'pred_slices': []
+            }
+
+        # 2. --- ИЗМЕНЕНИЕ: Формирование батча в формате чата ---
+        batch_messages = []
+        for image in slices_to_process:
+            messages = [
+                {"role": "system", "content": [{"type": "text", "text": self.system_prompt}]},
+                {"role": "user", "content": [{"type": "text", "text": self.user_prompt}, {"type": "image", "image": image}]}
+            ]
+            batch_messages.append(messages)
+
+        # 3. Запуск инференса
+        outputs = self.pipe(
+            batch_messages,
+            max_new_tokens=10, # Достаточно для "label: anomaly"
+            batch_size=4 # Оставляем батчинг для скорости
+        )
+
+        # 4. Парсинг результатов
+        slice_preds = []
+        for output in outputs:
+            # Извлекаем последний ответ модели
+            text_content = output[0]['generated_text'][-1]['content']
+            # Ищем 'anomaly' в ответе, это надежнее, чем парсить 'label:'
+            is_anomaly = 'anomaly' in text_content.lower()
+            slice_preds.append(is_anomaly)
+
+        # 5. Агрегация и возврат результата в старом формате
+        num_pathology_slices = sum(slice_preds)
+        total_processed = len(slice_preds)
         
-        # --- ИСПРАВЛЕНИЕ: Возвращаем словарь с новыми, информативными ключами ---
+        study_prob_pathology = (num_pathology_slices / total_processed) if total_processed > 0 else 0.0
+        study_has_pathology = study_prob_pathology >= threshold
+
+        # Создаем полный список предсказаний для всех срезов (False по умолчанию)
+        full_preds = [False] * num_total_slices
+        for i, pred_idx in enumerate(indices_to_process):
+            if slice_preds[i]:
+                full_preds[pred_idx] = True
+
+        processing_time = time.time() - start_time
+
         return {
-            "pred_slices": preds,                   # list[bool] - Бинарные предсказания для каждого среза
-            "prob_slices": raw_probs,               # list[float] - "Сырые" вероятности для каждого среза (для отладки)
-            "study_processing_time": duration,      # float - Время обработки исследования моделью
-            "study_has_pathology": has_pathology,   # bool - Итоговый бинарный ответ по всему исследованию
-            "study_prob_pathology": final_probability # float - Итоговая вероятность патологии для исследования
+            "study_has_pathology": study_has_pathology,
+            "study_prob_pathology": study_prob_pathology,
+            "study_processing_time": processing_time,
+            "pred_slices": full_preds
         }
