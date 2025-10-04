@@ -3,31 +3,35 @@ services:
     image: medscreen:latest # Указываем тег
     build:
       context: .
-      secrets:
-        - HF_TOKEN
+      # secrets:
+      #   - HF_TOKEN
     container_name: medscreen-app
     ports:
       - "8501:8501"
+    env_file:
+      - .env
     environment:
       - PYTHONUNBUFFERED=1
       - NVIDIA_VISIBLE_DEVICES=all
-      - HF_TOKEN=${HF_TOKEN}
+      # - HF_TOKEN=${HF_TOKEN}
     restart: unless-stopped
     runtime: nvidia
 
   medscreen-api:
-    image: medscreen:latest # Используем уже собранный образ
+    image: medscreen:latest
     container_name: medscreen-api
     ports:
       - "8502:8502"
+    env_file:
+      - .env
     environment:
       - PYTHONUNBUFFERED=1
       - NVIDIA_VISIBLE_DEVICES=all
-      - HF_TOKEN=${HF_TOKEN}
+      # - HF_TOKEN=${HF_TOKEN}
     restart: unless-stopped
     runtime: nvidia
     command: ["uvicorn", "api:app", "--host", "0.0.0.0", "--port", "8502"]
 
-secrets:
-  HF_TOKEN:
-    file: .env
+# secrets:
+#   HF_TOKEN:
+#     file: .env
