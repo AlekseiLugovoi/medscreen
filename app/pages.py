@@ -4,7 +4,7 @@ import pandas as pd
 from app.file_io import parse_zip_archive
 from app.data_validation import validate_series
 from app.visualization import prepare_frames_for_display, create_gif
-from app.ml_processing import run_inference_via_api
+from app.ml_processing import get_model, run_pathology_inference
 
 # Окна визуализации для КТ (Center, Width)
 CT_WINDOWS = {
@@ -146,16 +146,11 @@ def show_preview_page():
             st.subheader("Найденные патологии")
             if 'pathology_results' not in st.session_state:
                 if st.button("Найти патологии", type="primary", use_container_width=True):
-                    # ИЗМЕНЕНИЕ: Вызываем API вместо локальной модели
-                    results = run_inference_via_api(
-                        st.session_state.file_content, 
-                        uploaded_file.name
-                    )
-                    
+                    model = get_model()
+                    results = run_pathology_inference(model, series_data['frames'])
                     st.session_state.pathology_results = results
                     st.session_state.study_has_pathology = results.get('study_has_pathology', False)
                     st.session_state.study_prob_pathology = results.get('study_prob_pathology', 0.0)
-                    # --- Конец исправления ---
                     st.rerun()
                 st.info("Нажмите кнопку для запуска ML-анализа.")
             
@@ -218,14 +213,14 @@ def show_batch_page():
                     'ml_processing_time'
                 ]
                 
-                # УДАЛЯЕМ: model = get_model()
+                # ИСПРАВЛЕНИЕ: Добавляем загрузку модели
+                model = get_model()
                 progress_bar = st.progress(0, "Начало обработки...")
                 
                 for i, file in enumerate(uploaded_files):
                     progress_text = f"Анализ файла {i+1}/{len(uploaded_files)}: {file.name}..."
                     progress_bar.progress(i / len(uploaded_files), text=progress_text)
                     
-                    # --- ИСПРАВЛЕНИЕ: Передаем байты, а не объект файла ---
                     series_data, error_message = parse_zip_archive(file.getvalue())
 
                     if not series_data or error_message:
@@ -238,8 +233,8 @@ def show_batch_page():
                         is_valid = all(check['status'] for check in validation_checks)
 
                         if is_valid and len(data['frames']) > 0:
-                            # ИЗМЕНЕНИЕ: Вызываем API для каждого файла
-                            inference_results = run_inference_via_api(file.getvalue(), file.name)
+                            # ИСПРАВЛЕНИЕ: Используем локальную модель
+                            inference_results = run_pathology_inference(model, data['frames'])
                             has_pathology_flag = inference_results.get('study_has_pathology', False)
                             final_prob = inference_results.get('study_prob_pathology', 0.0)
                             ml_time = inference_results.get('study_processing_time', 0.0)

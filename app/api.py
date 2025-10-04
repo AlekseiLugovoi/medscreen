@@ -26,8 +26,9 @@ async def process_single_archive(file: UploadFile = File(...)):
     Принимает один ZIP-архив, проводит полный анализ (валидация + ML)
     и возвращает результат в виде JSON.
     """
-    # --- ИСПРАВЛЕНИЕ: Используем file.file для передачи файлового объекта ---
-    series_data, error_message = parse_zip_archive(file.file)
+    # --- ИСПРАВЛЕНИЕ: Используем await file.read() вместо file.file ---
+    file_content = await file.read()
+    series_data, error_message = parse_zip_archive(file_content)
 
     if not series_data or error_message:
         return {"error": error_message or "Parsing error"}
@@ -74,8 +75,9 @@ async def process_archives(files: List[UploadFile] = File(...)):
     ]
 
     for file in files:
-        # --- ИСПРАВЛЕНИЕ: Используем file.file ---
-        series_data, error_message = parse_zip_archive(file.file)
+        # ИСПРАВЛЕНИЕ: Используем await file.read() вместо file.file
+        file_content = await file.read()
+        series_data, error_message = parse_zip_archive(file_content)
 
         if not series_data or error_message:
             csv_data.append({'archive_name': file.filename, 'is_valid': False, 'series_uid': error_message or "Parsing error"})

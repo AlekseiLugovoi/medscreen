@@ -12,10 +12,11 @@ services:
     environment:
       - PYTHONUNBUFFERED=1
       - NVIDIA_VISIBLE_DEVICES=all
-      - API_URL=http://medscreen-api:8502
       - PYTHONPATH=/app
     restart: unless-stopped
     runtime: nvidia
+    command: ["python", "-m", "streamlit", "run", "app/main.py", "--server.port=8501", "--server.address=0.0.0.0"]
+    profiles: ["default", "app"]
 
   medscreen-api:
     image: medscreen:latest
@@ -31,3 +32,4 @@ services:
     restart: unless-stopped
     runtime: nvidia
     command: ["uvicorn", "app.api:app", "--host", "0.0.0.0", "--port", "8502"]
+    profiles: ["api"]
