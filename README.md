@@ -60,16 +60,48 @@
     - **API:** `http://localhost:8502`
     - **Документация (Swagger):** `http://localhost:8502/docs`
 
-    **Пример запроса (пакетная обработка):**
+    **Пример запроса:**
     ```bash
-    # Отправка двух архивов и сохранение результата в report.csv
-    curl -X POST "http://localhost:8502/api/v1/upload" \
+    # Отправка двух архивов для анализа
+    curl -X POST "http://localhost:8502/process" \
          -H "Content-Type: multipart/form-data" \
          -F "files=@/путь/к/study1.zip" \
-         -F "files=@/путь/к/study2.zip" \
-         --output report.csv
+         -F "files=@/путь/к/study2.zip"
     ```
-    **Ответ:** CSV-файл с результатами анализа.
+    
+    **Пример ответа (JSON):**
+    ```json
+    {
+      "results": [
+        {
+          "archive_name": "study1.zip",
+          "series_uid": "1.2.840.113704.1.111.4980...",
+          "source_format": "DICOM Series",
+          "modality": "CT",
+          "body_part": "CHEST",
+          "orientation": "Axial",
+          "num_frames": 120,
+          "is_valid": true,
+          "has_pathology": false,
+          "pred_pathology": "0.0500",
+          "ml_processing_time": "5.12s"
+        },
+        {
+          "archive_name": "study2.zip",
+          "series_uid": "1.3.6.1.4.1.14519.5.2.1...",
+          "source_format": "DICOM Series",
+          "modality": "CT",
+          "body_part": "CHEST",
+          "orientation": "Axial",
+          "num_frames": 95,
+          "is_valid": true,
+          "has_pathology": true,
+          "pred_pathology": "0.8750",
+          "ml_processing_time": "4.31s"
+        }
+      ]
+    }
+    ```
     </details>
 
     <details>

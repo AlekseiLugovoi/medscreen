@@ -20,6 +20,9 @@ services:
 
   medscreen-api:
     image: medscreen:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
     container_name: medscreen-api
     ports:
       - "8502:8502"
