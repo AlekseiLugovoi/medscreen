@@ -6,16 +6,56 @@
 
 ## 💻 Системные требования
 
-### Минимальные требования
+<details>
+<summary><strong>Минимальные требования</strong></summary>
+
 - **GPU:** NVIDIA с поддержкой CUDA (минимум 8GB VRAM)
 - **RAM:** 16GB системной памяти
 - **Диск:** 20GB свободного места (для модели и зависимостей)
-- **ОС:** Linux с поддержкой Docker и nvidia-container-toolkit
+- **ОС:** Linux с поддержкой Docker и `nvidia-container-toolkit`
 
-### Рекомендуемые требования
+</details>
+
+<details>
+<summary><strong>Рекомендуемые требования</strong></summary>
+
 - **GPU:** NVIDIA RTX 3080/4080 или выше (12GB+ VRAM)
 - **RAM:** 32GB системной памяти
 - **CPU:** 8+ ядер
+
+</details>
+
+<details>
+<summary><strong>Проверка совместимости</strong></summary>
+
+<details>
+<summary>🐧 Linux</summary>
+
+```bash
+# 1. Проверка CUDA драйвера
+nvidia-smi
+
+# 2. Проверка Docker + NVIDIA Runtime
+docker run --rm --gpus all nvidia/cuda:12.4.1-base-ubuntu22.04 nvidia-smi
+```
+</details>
+
+<details>
+<summary>🪟 Windows (c WSL2)</summary>
+<br>
+Убедитесь, что у вас установлен <a href="https://developer.nvidia.com/cuda/wsl">драйвер NVIDIA для WSL</a> и в Docker Desktop включена поддержка GPU. Команды выполняются в PowerShell.
+
+```powershell
+# 1. Проверка CUDA в WSL
+wsl nvidia-smi
+
+# 2. Проверка Docker
+docker run --rm --gpus all nvidia/cuda:12.4.1-base-ubuntu22.04 nvidia-smi
+```
+</details>
+
+</details>
+
 
 ## 🚀 Quick Start
 
@@ -53,7 +93,7 @@
     Запускает автономное веб-приложение с локальной моделью.
     ```sh
     # Эта команда запустит сервис с профилем "default"
-    docker compose up --build
+    docker compose --profile default up --build
     ```
     **Доступ:** `http://localhost:8501`
     </details>

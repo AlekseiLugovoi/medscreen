@@ -114,6 +114,9 @@ Steps:
         step = select_step(num_total_slices)
         indices_to_process = quartile_sample_indices(num_total_slices, step)
         
+        # --- ДОБАВЛЕНО: Логирование начала обработки ---
+        model_logger.info(f"Начало инференса: {len(indices_to_process)}/{num_total_slices} срезов (шаг={step})")
+        
         slices_to_process = [self._prepare_slice(volume_3d[i]) for i in indices_to_process]
 
         if not slices_to_process:
@@ -134,16 +137,14 @@ Steps:
         # 3. Запуск инференса
         outputs = self.pipe(
             batch_messages,
-            max_new_tokens=10, # Достаточно для "label: anomaly"
-            batch_size=4 # Оставляем батчинг для скорости
+            max_new_tokens=10,
+            batch_size=4
         )
 
         # 4. Парсинг результатов
         slice_preds = []
         for output in outputs:
-            # Извлекаем последний ответ модели
             text_content = output[0]['generated_text'][-1]['content']
-            # Ищем 'anomaly' в ответе, это надежнее, чем парсить 'label:'
             is_anomaly = 'anomaly' in text_content.lower()
             slice_preds.append(is_anomaly)
 
@@ -154,13 +155,15 @@ Steps:
         study_prob_pathology = (num_pathology_slices / total_processed) if total_processed > 0 else 0.0
         study_has_pathology = study_prob_pathology >= threshold
 
-        # Создаем полный список предсказаний для всех срезов (False по умолчанию)
         full_preds = [False] * num_total_slices
         for i, pred_idx in enumerate(indices_to_process):
             if slice_preds[i]:
                 full_preds[pred_idx] = True
 
         processing_time = time.time() - start_time
+        
+        # --- ДОБАВЛЕНО: Логирование результата ---
+        model_logger.info(f"Инференс завершен за {processing_time:.2f}с | Патология: {study_has_pathology} ({study_prob_pathology:.1%}) | {get_gpu_memory_usage_str()}")
 
         return {
             "study_has_pathology": study_has_pathology,
