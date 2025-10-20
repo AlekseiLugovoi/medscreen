@@ -24,36 +24,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 ENV HF_HOME=/app/huggingface_cache
 ENV TRANSFORMERS_CACHE=/app/huggingface_cache
 
-# Создаем скрипт для скачивания модели
-RUN echo 'import os\n\
-import sys\n\
-from transformers import AutoModel, AutoProcessor\n\
-\n\
-# Получаем токен из переменной окружения\n\
-token = os.environ.get("HUGGING_FACE_TOKEN", "")\n\
-if not token:\n\
-    print("Error: HUGGING_FACE_TOKEN not found in environment", file=sys.stderr)\n\
-    sys.exit(1)\n\
-\n\
-model_name = "google/medgemma-4b-it"\n\
-print(f"Downloading {model_name}...")\n\
-\n\
-AutoModel.from_pretrained(\n\
-    model_name,\n\
-    token=token,\n\
-    cache_dir="/app/huggingface_cache"\n\
-)\n\
-\n\
-AutoProcessor.from_pretrained(\n\
-    model_name,\n\
-    token=token,\n\
-    cache_dir="/app/huggingface_cache"\n\
-)\n\
-\n\
-print("Model downloaded successfully!")' > /tmp/download_model.py
-
-# Скачиваем модель
 RUN --mount=type=secret,id=HF_TOKEN \
+    set -eu; \
     if [ -f /run/secrets/HF_TOKEN ]; then \
         export HUGGING_FACE_TOKEN=$(cat /run/secrets/HF_TOKEN); \
     elif [ -n "$HF_TOKEN" ]; then \
@@ -62,8 +34,25 @@ RUN --mount=type=secret,id=HF_TOKEN \
         echo "Error: Hugging Face token not found." >&2; \
         echo "Please provide it via secret mount or --build-arg HF_TOKEN." >&2; \
         exit 1; \
-    fi && \
-    python3.11 /tmp/download_model.py
+    fi; \
+    python3.11 - <<'PY'
+import os
+import sys
+from transformers import AutoModel, AutoProcessor
+
+token = os.environ.get("HUGGING_FACE_TOKEN", "")
+if not token:
+    print("Error: HUGGING_FACE_TOKEN not found in environment", file=sys.stderr)
+    sys.exit(1)
+
+model_name = "google/medgemma-4b-it"
+print(f"Downloading {model_name}...")
+
+AutoModel.from_pretrained(model_name, token=token, cache_dir="/app/huggingface_cache")
+AutoProcessor.from_pretrained(model_name, token=token, cache_dir="/app/huggingface_cache")
+
+print("Model downloaded successfully!")
+PY
 
 # Финальный образ
 FROM nvidia/cuda:12.4.1-runtime-ubuntu22.04
