@@ -14,17 +14,37 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Free up disk space (aggressive)
+      - name: Free up disk space (maximum)
         run: |
           echo "Initial free space:"
           df -h
-          sudo rm -rf /usr/share/dotnet   
+          
+          # Удаляем ненужные инструменты и библиотеки
+          sudo rm -rf /usr/share/dotnet
           sudo rm -rf /opt/ghc
           sudo rm -rf /usr/local/share/boost
-          sudo rm -rf $AGENT_TOOLSDIRECTORY
+          sudo rm -rf "$AGENT_TOOLSDIRECTORY"
           sudo rm -rf /usr/local/lib/android
           sudo rm -rf /usr/share/swift
-          sudo docker system prune -af --volumes
+          sudo rm -rf /usr/local/.ghcup
+          sudo rm -rf /opt/hostedtoolcache/CodeQL
+          sudo rm -rf /usr/local/share/powershell
+          sudo rm -rf /usr/share/miniconda
+          sudo rm -rf /usr/local/lib/node_modules
+          
+          # Очищаем apt кэш
+          sudo apt-get clean
+          sudo apt-get autoremove -y
+          sudo apt-get autoclean -y
+          
+          # Очищаем Docker
+          docker rmi $(docker images -q) 2>/dev/null || true
+          docker system prune -af --volumes
+          
+          # Удаляем большие пакеты
+          sudo apt-get remove -y '^aspnetcore-.*' '^dotnet-.*' '^llvm-.*' 'php.*' '^mongodb-.*' '^mysql-.*' 'azure-cli' 'google-cloud-cli' 'google-chrome-stable' 'firefox' 'powershell' 'mono-devel' 2>/dev/null || true
+          sudo apt-get autoremove -y
+          
           echo "Free space after cleanup:"
           df -h
 

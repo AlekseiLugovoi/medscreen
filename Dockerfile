@@ -32,9 +32,8 @@ RUN --mount=type=secret,id=HF_TOKEN \
     python3.11 - <<'PY'
 import os
 import sys
-from transformers import AutoModel, AutoProcessor
-from huggingface_hub import scan_cache_dir
 import shutil
+from transformers import AutoModel, AutoProcessor
 
 token = os.environ.get("HUGGING_FACE_TOKEN", "")
 if not token:
@@ -45,28 +44,63 @@ model_name = "google/medgemma-4b-it"
 cache_dir = "/app/huggingface_cache"
 print(f"Downloading {model_name}...")
 
-AutoModel.from_pretrained(model_name, token=token, cache_dir=cache_dir)
-AutoProcessor.from_pretrained(model_name, token=token, cache_dir=cache_dir)
+# Загружаем модель
+model = AutoModel.from_pretrained(model_name, token=token, cache_dir=cache_dir)
+processor = AutoProcessor.from_pretrained(model_name, token=token, cache_dir=cache_dir)
+
+# Сразу удаляем модель из памяти
+del model
+del processor
 
 print("Model downloaded successfully!")
 print("Cleaning up cache...")
 
-# Удаляем временные файлы и дубликаты
+# Агрессивная очистка кэша
+import glob
+import gc
+
+# Принудительная сборка мусора
+gc.collect()
+
+# Находим и удаляем дубликаты и временные файлы
 cache_path = f"{cache_dir}/hub"
 if os.path.exists(cache_path):
-    for item in os.listdir(cache_path):
-        item_path = os.path.join(cache_path, item)
-        # Удаляем папки с "blobs" и временными файлами
-        if "blobs" in item or item.startswith("."):
-            shutil.rmtree(item_path, ignore_errors=True)
-            print(f"Removed: {item}")
+    # Удаляем .incomplete файлы
+    for incomplete in glob.glob(f"{cache_path}/**/*.incomplete", recursive=True):
+        os.remove(incomplete)
+        print(f"Removed incomplete: {incomplete}")
+    
+    # Удаляем blobs (они дублируются в snapshots)
+    blobs_path = os.path.join(cache_path, "blobs")
+    if os.path.exists(blobs_path):
+        shutil.rmtree(blobs_path)
+        print("Removed blobs directory")
+    
+    # Удаляем временные папки
+    for tmp_dir in glob.glob(f"{cache_path}/models--*/refs"):
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+    
+    # Удаляем .lock файлы
+    for lock_file in glob.glob(f"{cache_path}/**/*.lock", recursive=True):
+        os.remove(lock_file)
 
 print("Cache cleanup complete.")
+
+# Показываем размер итогового кэша
+total_size = 0
+for dirpath, dirnames, filenames in os.walk(cache_dir):
+    for f in filenames:
+        fp = os.path.join(dirpath, f)
+        if os.path.exists(fp):
+            total_size += os.path.getsize(fp)
+print(f"Final cache size: {total_size / (1024**3):.2f} GB")
 PY
 
-# Дополнительная очистка pip кэша
+# Очистка pip кэша и временных файлов
 RUN pip cache purge && \
-    rm -rf /root/.cache/pip
+    rm -rf /root/.cache/pip && \
+    rm -rf /tmp/* && \
+    find /opt/venv -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
 
 FROM nvidia/cuda:12.4.1-runtime-ubuntu22.04
 
