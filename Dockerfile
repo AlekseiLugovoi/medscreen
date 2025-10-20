@@ -3,7 +3,6 @@
 FROM nvidia/cuda:12.4.1-runtime-ubuntu22.04
 
 ARG HF_TOKEN
-ENV HF_TOKEN=${HF_TOKEN}
 
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y python3.11 python3.11-venv python3-pip curl && \
@@ -29,23 +28,32 @@ COPY ./.streamlit ./app/.streamlit
 ENV HF_HOME=/app/huggingface_cache
 ENV TRANSFORMERS_CACHE=/app/huggingface_cache
 
-# Скрипт для загрузки модели при первом запуске
-RUN echo '#!/bin/bash\n\
-if [ ! -d "/app/huggingface_cache/hub" ]; then\n\
-  echo "Downloading model..."\n\
-  python3.11 -c "\n\
-from transformers import AutoModel, AutoProcessor\n\
-import os\n\
-token = os.environ.get(\"HF_TOKEN\")\n\
-if token:\n\
-    AutoModel.from_pretrained(\"google/medgemma-4b-it\", token=token, cache_dir=\"/app/huggingface_cache\")\n\
-    AutoProcessor.from_pretrained(\"google/medgemma-4b-it\", token=token, cache_dir=\"/app/huggingface_cache\")\n\
-    print(\"Model downloaded successfully!\")\n\
-else:\n\
-    print(\"Warning: HF_TOKEN not set, model will be downloaded on first inference\")\n\
-fi\n\
-"\n\
-exec "$@"' > /app/entrypoint.sh && chmod +x /app/entrypoint.sh
+# Создаем entrypoint скрипт правильно
+COPY <<'EOF' /app/entrypoint.sh
+#!/bin/bash
+set -e
+
+if [ ! -d "/app/huggingface_cache/hub" ]; then
+  echo "Downloading model..."
+  python3.11 -c '
+from transformers import AutoModel, AutoProcessor
+import os
+
+token = os.environ.get("HF_TOKEN")
+if token:
+    print(f"Using token: {token[:10]}...")
+    AutoModel.from_pretrained("google/medgemma-4b-it", token=token, cache_dir="/app/huggingface_cache")
+    AutoProcessor.from_pretrained("google/medgemma-4b-it", token=token, cache_dir="/app/huggingface_cache")
+    print("Model downloaded successfully!")
+else:
+    print("Warning: HF_TOKEN not set, model will be downloaded on first inference")
+'
+fi
+
+exec "$@"
+EOF
+
+RUN chmod +x /app/entrypoint.sh
 
 EXPOSE 8501 8502
 
