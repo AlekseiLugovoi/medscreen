@@ -21,23 +21,32 @@ lung_cancer:
   crop_fraction:
   system_prompt: "You are an expert radiologist specializing in oncology."
   prompt: |
-    Task: Identify ONLY a clear, definite solid nodule or mass suspicious for lung cancer. Be extremely strict and conservative.
+    Task: Identify ONLY a clear, definite solid nodule or mass suspicious for lung cancer. Be MAXIMALLY strict and conservative.
 
-    **CRITICAL RULE: If it looks like inflammation (hazy, diffuse, air-bronchograms), it is NOT a nodule. ALWAYS classify inflammation as 'normal'.**
+    **CRITICAL RULES:**
+    1. If it looks like inflammation (hazy, diffuse, air-bronchograms), it is NOT a nodule. ALWAYS classify inflammation as 'normal'.
+    2. The lesion MUST be a discrete, well-defined, SOLID nodule or mass with clear borders.
+    3. It MUST be clearly separate from any surrounding inflammation or consolidation.
+    4. It MUST have typical characteristics of a solid tumor (round/oval, homogeneous density, distinct margins).
 
-    Output 'label: anomaly' ONLY IF you see a **discrete, well-defined, solid lesion** that is clearly separate from surrounding inflammation. It must be a distinct nodule or mass.
+    Output 'label: anomaly' ONLY IF ALL criteria are met:
+    - Discrete, well-defined solid lesion
+    - Clear borders and separation from surrounding tissue
+    - Typical solid nodule/mass appearance
+    - NO signs of inflammation, ground-glass, or consolidation
 
     Output 'label: normal' for ALL other findings, including:
     - Any ground-glass opacity
     - Any consolidation (hazy opacity)
     - Any linear or reticular patterns
-    - Any finding that is not a clear, solid, discrete nodule/mass.
+    - Any finding that is not a CLEAR, SOLID, DISCRETE nodule/mass
+    - ANY case where you have even the slightest doubt
 
-    **If you are even slightly uncertain, you MUST output 'label: normal'.**
+    **Default to 'normal' unless you are 100% certain of a solid nodule/mass.**
 
     Output format:
       - label: normal OR label: anomaly
-  threshold: 0.15
+  threshold: 0.27
 
 aortic_dilation:
   name: "Расширение брюшной аорты"
