@@ -3,8 +3,8 @@
 # Сборка зависимостей и скачивание модели
 FROM nvidia/cuda:12.4.1-devel-ubuntu22.04 AS builder
 
-# Принимаем токен как аргумент сборки (для Paperspace) или через secret (для локальной сборки)
-ARG HF_TOKEN
+# Убираем ARG HF_TOKEN, он больше не нужен
+# ARG HF_TOKEN
 
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y python3.11 python3.11-venv python3-pip git && rm -rf /var/lib/apt/lists/*
@@ -24,21 +24,16 @@ RUN pip install --no-cache-dir -r requirements.txt
 ENV HF_HOME=/app/huggingface_cache
 ENV TRANSFORMERS_CACHE=/app/huggingface_cache
 
-# Попробуем использовать secret (для локальной сборки), если не получится - используем ARG (для Paperspace)
+# Упрощенная и надежная команда для скачивания
 RUN --mount=type=secret,id=HF_TOKEN \
-    if [ -f /run/secrets/HF_TOKEN ]; then \
-        export HF_TOKEN=$(cat /run/secrets/HF_TOKEN); \
-    fi; \
-    if [ -z "$HF_TOKEN" ]; then \
-        echo "Error: HF_TOKEN is not set. Pass it as --build-arg or via secret mount" && exit 1; \
-    fi; \
     python3.11 -c "\
 from transformers import AutoModel, AutoProcessor; \
 import os; \
 model_name = 'google/medgemma-4b-it'; \
+token = open('/run/secrets/HF_TOKEN').read().strip(); \
 print(f'Downloading {model_name}...'); \
-AutoModel.from_pretrained(model_name, token=os.environ['HF_TOKEN'], cache_dir='/app/huggingface_cache'); \
-AutoProcessor.from_pretrained(model_name, token=os.environ['HF_TOKEN'], cache_dir='/app/huggingface_cache'); \
+AutoModel.from_pretrained(model_name, token=token, cache_dir='/app/huggingface_cache'); \
+AutoProcessor.from_pretrained(model_name, token=token, cache_dir='/app/huggingface_cache'); \
 print('Model downloaded successfully!')"
 
 # Финальный образ

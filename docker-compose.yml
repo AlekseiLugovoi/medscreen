@@ -5,7 +5,7 @@ services:
       context: .
       dockerfile: Dockerfile
       secrets:
-        - hf_token
+        - HF_TOKEN
     container_name: medscreen-app
     ports:
       - "8501:8501"
@@ -28,7 +28,7 @@ services:
       context: .
       dockerfile: Dockerfile
       secrets:
-        - hf_token
+        - HF_TOKEN
     container_name: medscreen-api
     ports:
       - "8502:8502"
@@ -46,5 +46,5 @@ services:
     profiles: ["api"]
 
 secrets:
-  hf_token:
+  HF_TOKEN:
     environment: HF_TOKEN
