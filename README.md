@@ -76,7 +76,7 @@ docker run --rm --gpus all nvidia/cuda:12.4.1-base-ubuntu22.04 nvidia-smi
 2.  **Создайте файл .env:**
     ```sh
     # Замените ... вашим токеном от Hugging Face
-    # или воспользуйтесь нашим: hf _nNvENhqrQTVFgRxSGUUpYNudvpEgQaNOWZ
+    # или воспользуйтесь нашим: hf_ nNvENhqrQTVFgRxSGUUpYNudvpEgQaNOWZ
     echo "HF_TOKEN=hf_..." > .env
     ```
 
@@ -85,7 +85,7 @@ docker run --rm --gpus all nvidia/cuda:12.4.1-base-ubuntu22.04 nvidia-smi
     <details>
     <summary><strong>Запуск через Docker (рекомендуется)</strong></summary>
     
-    <br>
+    > **Примечание:** Веса модели скачиваются во время сборки образа, поэтому запуск контейнера будет быстрым. Для сборки используется `DOCKER_BUILDKIT=1` для безопасной передачи Hugging Face токена.
 
     <details>
     <summary>🌐 Только веб-интерфейс (по умолчанию)</summary>
@@ -93,7 +93,7 @@ docker run --rm --gpus all nvidia/cuda:12.4.1-base-ubuntu22.04 nvidia-smi
     Запускает автономное веб-приложение с локальной моделью.
     ```sh
     # Эта команда запустит сервис с профилем "default"
-    docker compose --profile default up --build
+    DOCKER_BUILDKIT=1 docker compose --profile default up --build
     ```
     **Доступ:** `http://localhost:8501`
     </details>
@@ -104,7 +104,7 @@ docker run --rm --gpus all nvidia/cuda:12.4.1-base-ubuntu22.04 nvidia-smi
     Запускает только API-сервис для автоматизации и пакетной обработки.
     ```sh
     # Явно указываем профиль "api"
-    docker compose --profile api up --build
+    DOCKER_BUILDKIT=1 docker compose --profile api up --build
     ```
     **Доступ:**
     - **API:** `http://localhost:8502`
@@ -132,8 +132,10 @@ docker run --rm --gpus all nvidia/cuda:12.4.1-base-ubuntu22.04 nvidia-smi
           "orientation": "Axial",
           "num_frames": 120,
           "is_valid": true,
-          "has_pathology": false,
-          "pred_pathology": "0.0500",
+          "has_any_pathology": false,
+          "pneumonia": false,
+          "lung_cancer": false,
+          "aortic_dilation": false,
           "ml_processing_time": "5.12s"
         },
         {
@@ -145,8 +147,10 @@ docker run --rm --gpus all nvidia/cuda:12.4.1-base-ubuntu22.04 nvidia-smi
           "orientation": "Axial",
           "num_frames": 95,
           "is_valid": true,
-          "has_pathology": true,
-          "pred_pathology": "0.8750",
+          "has_any_pathology": true,
+          "pneumonia": true,
+          "lung_cancer": false,
+          "aortic_dilation": false,
           "ml_processing_time": "4.31s"
         }
       ]
@@ -161,7 +165,7 @@ docker run --rm --gpus all nvidia/cuda:12.4.1-base-ubuntu22.04 nvidia-smi
     Запускает и веб-интерфейс, и REST API.
     ```sh
     # Указываем оба профиля
-    docker compose --profile default --profile api up --build
+    DOCKER_BUILDKIT=1 docker compose --profile default --profile api up --build
     ```
     **Доступ:**
     - **Веб-интерфейс:** `http://localhost:8501`
@@ -174,6 +178,8 @@ docker run --rm --gpus all nvidia/cuda:12.4.1-base-ubuntu22.04 nvidia-smi
     <details>
     <summary><strong>Локальная разработка (Conda)</strong></summary>
 
+    > **Примечание:** Веса модели будут скачаны при первом запуске приложения (может занять 3-5 минут).
+
     ```sh
     # Создание окружения
     conda create -n medscreen python=3.11 --yes
@@ -181,13 +187,13 @@ docker run --rm --gpus all nvidia/cuda:12.4.1-base-ubuntu22.04 nvidia-smi
     pip install -r requirements.txt
 
     # Запуск веб-интерфейса
-    streamlit run app/main.py --server.port 8501
+    cd medscreen
+    PYTHONPATH=$PWD streamlit run app/main.py --server.port 8501
 
     # Или запуск API (в отдельном терминале)
-    uvicorn app.api:app --host 0.0.0.0 --port 8502
+    PYTHONPATH=$PWD uvicorn app.api:app --host 0.0.0.0 --port 8502
     ```
     </details>
-
 
 4.  **Протестируйте сервис:**
     Используйте [**демо-данные**](https://disk.yandex.ru/d/2ddI6aLMkoIYrA) для проверки работоспособности.

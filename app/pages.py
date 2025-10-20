@@ -143,7 +143,7 @@ def show_preview_page():
             st.caption(f"Показан срез: {st.session_state.slice_idx + 1} / {num_frames}")
 
         with vis_col3:
-            st.subheader("Найденные патологии")
+            st.subheader("Возможные патологии") # ИЗМЕНЕНИЕ: Заголовок
             if 'pathology_results' not in st.session_state:
                 if st.button("Найти патологии", type="primary", use_container_width=True):
                     model = get_model()
@@ -155,22 +155,24 @@ def show_preview_page():
                 st.info("Нажмите кнопку для запуска ML-анализа.")
             
             else:
-                # --- ИСПРАВЛЕНИЕ: Используем новые флаги из session_state ---
-                has_pathology = st.session_state.get('study_has_pathology', False)
-                final_prob = st.session_state.get('study_prob_pathology', 0.0)
-
-                if not has_pathology:
-                    st.success("Патологий не найдено.", icon="✅")
-                    st.caption(f"Итоговая вероятность: {final_prob:.4f}")
+                results = st.session_state.pathology_results
+                found = results.get("pathologies_found", [])
+                if not found:
+                    st.success("Патологий не найдено ✅")
                 else:
-                    # Используем 'pred_slices' для визуализации, а не для принятия решения
-                    pathology_indices = [i for i, pred in enumerate(st.session_state.pathology_results.get('pred_slices', [])) if pred]
-                    st.error(f"Найдено на {len(pathology_indices)} срезах:", icon="⚠️")
-                    st.caption(f"Итоговая вероятность: {final_prob:.4f}")
-                    slice_numbers_str = ", ".join([str(i + 1) for i in pathology_indices])
-                    st.markdown("**Номера срезов:**")
-                    st.text_area("Срезы с патологией", value=slice_numbers_str, height=100, disabled=True)
-
+                    # ИЗМЕНЕНИЕ: Используем st.expander для каждой патологии
+                    for pathology_name in found:
+                        for key, details in results.items():
+                            if isinstance(details, dict) and details.get('name') == pathology_name:
+                                with st.expander(f"**{pathology_name}**", expanded=True):
+                                    pathology_slices = details.get('pathology_slices', [])
+                                    share = details.get('share_pathology_slices', 0)
+                                    st.progress(share, text=f"Доля позитивных срезов: {share:.0%}")
+                                    if pathology_slices:
+                                        st.caption(f"Обнаружена на срезах: {', '.join(map(str, pathology_slices))}")
+                                    else:
+                                        st.caption("Срезы с патологией не найдены.")
+                                break
 
 def show_batch_page():
     st.title("📦 Пакетная обработка")
@@ -209,7 +211,7 @@ def show_batch_page():
                 fieldnames = [
                     'archive_name', 'series_uid', 'source_format', 'modality',
                     'body_part', 'orientation', 'num_frames',
-                    'is_valid', 'has_pathology', 'pred_pathology', 
+                    'is_valid', 'has_pathology', 'pneumonia', 'lung_cancer', 'aortic_dilation',
                     'ml_processing_time'
                 ]
                 
@@ -224,7 +226,15 @@ def show_batch_page():
                     series_data, error_message = parse_zip_archive(file.getvalue())
 
                     if not series_data or error_message:
-                        csv_data.append({'archive_name': file.name, 'is_valid': False, 'series_uid': error_message or "Parsing error"})
+                        csv_data.append({
+                            'archive_name': file.name, 
+                            'is_valid': False, 
+                            'series_uid': error_message or "Parsing error",
+                            'has_pathology': False,
+                            'pneumonia': False,
+                            'lung_cancer': False, 
+                            'aortic_dilation': False
+                        })
                         continue
                     
                     for series_uid, data in series_data.items():
@@ -233,16 +243,18 @@ def show_batch_page():
                         is_valid = all(check['status'] for check in validation_checks)
 
                         if is_valid and len(data['frames']) > 0:
-                            # ИСПРАВЛЕНИЕ: Используем локальную модель
-                            inference_results = run_pathology_inference(model, data['frames'])
-                            has_pathology_flag = inference_results.get('study_has_pathology', False)
-                            final_prob = inference_results.get('study_prob_pathology', 0.0)
-                            ml_time = inference_results.get('study_processing_time', 0.0)
+                            inf = run_pathology_inference(model, data['frames'])
+                            # Используем bool для галочек вместо int
+                            has_pneumonia = inf.get('pneumonia', {}).get('has_pathology', False)
+                            has_lung_cancer = inf.get('lung_cancer', {}).get('has_pathology', False)
+                            has_aortic = inf.get('aortic_dilation', {}).get('has_pathology', False)
+                            ml_time = inf.get('study_processing_time', 0.0)
                         else:
-                            has_pathology_flag = False
-                            final_prob = 0.0
+                            has_pneumonia = False
+                            has_lung_cancer = False
+                            has_aortic = False
                             ml_time = 0.0
-
+                            
                         csv_data.append({
                             'archive_name': file.name,
                             'series_uid': series_uid,
@@ -252,8 +264,10 @@ def show_batch_page():
                             'orientation': meta.get('orientation', 'N/A'),
                             'num_frames': meta.get('num_frames', 'N/A'),
                             'is_valid': is_valid,
-                            'has_pathology': has_pathology_flag,
-                            'pred_pathology': f"{final_prob:.4f}",
+                            'has_pathology': has_pneumonia or has_lung_cancer or has_aortic,
+                            'pneumonia': has_pneumonia,
+                            'lung_cancer': has_lung_cancer,
+                            'aortic_dilation': has_aortic,
                             'ml_processing_time': f"{ml_time:.2f}s"
                         })
                 
@@ -289,17 +303,16 @@ def show_api_page():
 
     st.subheader("Пример использования")
     st.markdown("""
-    Вы можете отправить один или несколько ZIP-архивов на эндпоинт `/api/v1/upload`. 
-    Сервис обработает их и вернет **CSV-файл** с результатами, аналогичный тому, что формируется в режиме "Пакетная обработка".
+    Вы можете отправить один или несколько ZIP-архивов на эндпоинт `/process`. 
+    Сервис обработает их и вернет **JSON** с результатами анализа.
     """)
     
     st.code("""
-# Пример отправки двух архивов и сохранения результата в report.csv
-curl -X POST "http://localhost:8502/api/v1/upload" \\
+# Пример отправки двух архивов для анализа
+curl -X POST "http://localhost:8502/process" \\
      -H "Content-Type: multipart/form-data" \\
      -F "files=@/путь/к/вашему/study1.zip" \\
-     -F "files=@/путь/к/вашему/study2.zip" \\
-     --output report.csv
+     -F "files=@/путь/к/вашему/study2.zip"
     """, language="bash")
 
     st.subheader("Документация")

@@ -14,4 +14,4 @@ def run_pathology_inference(_model: PathologyClassifier, volume_3d: np.ndarray, 
     Кэшируемая обертка для запуска инференса модели.
     Возвращает словарь с результатами.
     """
-    return _model.run_inference(volume_3d, threshold=threshold)
+    return _model.run_inference(volume_3d)

@@ -1,0 +1,66 @@
+pneumonia:
+  name: "Пневмония"
+  window_center: -600     # «легочное» окно
+  window_width: 1500
+  crop_fraction:          # без кропа
+  system_prompt: "You are an expert radiologist specializing in infectious diseases."
+  prompt: |
+    Task: classify chest CT scan for pulmonary abnormalities.
+    Steps:
+    1) Examine both lungs for opacities, consolidations, ground-glass changes, pleural effusion, pneumothorax, fibrosis, or nodules.
+    2) If no abnormalities are visible, output label: normal.
+    3) If any abnormality is suspected, output label: anomaly.
+    4) Output format:
+      - label: normal OR label: anomaly
+  threshold: 0.1
+
+lung_cancer:
+  name: "Рак легких"
+  window_center: -600
+  window_width: 1500
+  crop_fraction:
+  system_prompt: "You are an expert radiologist specializing in oncology."
+  prompt: |
+    Task: Identify ONLY a clear, definite solid nodule or mass suspicious for lung cancer. Be extremely strict and conservative.
+
+    **CRITICAL RULE: If it looks like inflammation (hazy, diffuse, air-bronchograms), it is NOT a nodule. ALWAYS classify inflammation as 'normal'.**
+
+    Output 'label: anomaly' ONLY IF you see a **discrete, well-defined, solid lesion** that is clearly separate from surrounding inflammation. It must be a distinct nodule or mass.
+
+    Output 'label: normal' for ALL other findings, including:
+    - Any ground-glass opacity
+    - Any consolidation (hazy opacity)
+    - Any linear or reticular patterns
+    - Any finding that is not a clear, solid, discrete nodule/mass.
+
+    **If you are even slightly uncertain, you MUST output 'label: normal'.**
+
+    Output format:
+      - label: normal OR label: anomaly
+  threshold: 0.15
+
+aortic_dilation:
+  name: "Расширение брюшной аорты"
+  window_center: 100      # «кость»
+  window_width: 500
+  crop_fraction: 0.40     # центральные 40 %
+  system_prompt: "You are an expert radiologist specializing in vascular and abdominal imaging."
+  prompt: |
+    Task: classify CT slices for abdominal aortic aneurysm (AAA) ONLY (aortic dilation). Focus strictly on the abdominal aorta; ignore other organs and devices.
+    If the aorta is not visible on the slice, treat as normal.
+
+    Normal reference:
+    - Normal outer diameter of the abdominal aorta is ≤ 18 mm.
+    - As a visual rule of thumb on axial CT: the aortic outer diameter should be ≲ 40% of the visible vertebral body width on the same slice.
+
+    Suspicious for AAA (anomaly):
+    - Focal or diffuse outward bulging of the aortic wall with outer diameter clearly exceeding normal (see references above).
+    - Loss of normal tapering; more rounded/oval lumen; mural thrombus may be present along the wall (but decision is based on dilation).
+
+    Decision rule:
+    - If there is any suspicious sign of aneurysmal dilation → output label: anomaly.
+    - Otherwise → output label: normal.
+
+    Output format (single line):
+      - label: normal OR label: anomaly
+  threshold: 0.29

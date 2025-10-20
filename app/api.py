@@ -1,6 +1,6 @@
 import pandas as pd
 import io
-from typing import List
+from typing import List, Dict   # + Dict
 from fastapi import FastAPI, UploadFile, File
 
 from app.file_io import parse_zip_archive
@@ -45,12 +45,19 @@ async def process(files: List[UploadFile] = File(...)):
             is_valid = all(check['status'] for check in validation_checks)
 
             if is_valid and len(data['frames']) > 0:
-                inference_results = model.run_inference(data['frames'])
-                has_pathology_flag = inference_results.get('study_has_pathology', False)
-                final_prob = inference_results.get('study_prob_pathology', 0.0)
-                ml_time = inference_results.get('study_processing_time', 0.0)
+                inf = model.run_inference(data['frames'])
+                ml_time = inf.get('study_processing_time', 0.0)
+                # бинарные признаки по патологиям - используем bool, а не int
+                has_pneumonia = inf.get('pneumonia', {}).get('has_pathology', False)
+                has_lung_cancer = inf.get('lung_cancer', {}).get('has_pathology', False) 
+                has_aortic = inf.get('aortic_dilation', {}).get('has_pathology', False)
+                has_any_pathology = has_pneumonia or has_lung_cancer or has_aortic
             else:
-                has_pathology_flag, final_prob, ml_time = False, 0.0, 0.0
+                ml_time = 0.0
+                has_pneumonia = False
+                has_lung_cancer = False
+                has_aortic = False
+                has_any_pathology = False
 
             all_results.append({
                 'archive_name': file.filename,
@@ -61,8 +68,10 @@ async def process(files: List[UploadFile] = File(...)):
                 'orientation': meta.get('orientation', 'N/A'),
                 'num_frames': meta.get('num_frames', 0),
                 'is_valid': is_valid,
-                'has_pathology': has_pathology_flag,
-                'pred_pathology': f"{final_prob:.4f}",
+                'has_any_pathology': has_any_pathology,
+                'pneumonia': has_pneumonia,
+                'lung_cancer': has_lung_cancer,
+                'aortic_dilation': has_aortic,
                 'ml_processing_time': f"{ml_time:.2f}s"
             })
 
