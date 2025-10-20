@@ -39,6 +39,7 @@ RUN --mount=type=secret,id=HF_TOKEN \
 import os
 import sys
 from transformers import AutoModel, AutoProcessor
+from huggingface_hub import scan_cache_dir
 
 token = os.environ.get("HUGGING_FACE_TOKEN", "")
 if not token:
@@ -46,12 +47,24 @@ if not token:
     sys.exit(1)
 
 model_name = "google/medgemma-4b-it"
+cache_dir = "/app/huggingface_cache"
 print(f"Downloading {model_name}...")
 
-AutoModel.from_pretrained(model_name, token=token, cache_dir="/app/huggingface_cache")
-AutoProcessor.from_pretrained(model_name, token=token, cache_dir="/app/huggingface_cache")
+AutoModel.from_pretrained(model_name, token=token, cache_dir=cache_dir)
+AutoProcessor.from_pretrained(model_name, token=token, cache_dir=cache_dir)
 
 print("Model downloaded successfully!")
+print("Cleaning up Hugging Face cache to save space...")
+
+# Сканируем кэш и готовим стратегию удаления "сырых" файлов (blobs)
+scan = scan_cache_dir(cache_dir)
+strategy = scan.delete_revisions("blobs")
+
+print(f"Will free: {strategy.expected_freed_size_str}")
+# Выполняем очистку
+strategy.execute()
+
+print("Cache cleanup complete.")
 PY
 
 # Финальный образ
