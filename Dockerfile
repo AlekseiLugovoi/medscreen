@@ -3,8 +3,8 @@
 # Сборка зависимостей и скачивание модели
 FROM nvidia/cuda:12.4.1-devel-ubuntu22.04 AS builder
 
-# Убираем ARG HF_TOKEN, он больше не нужен
-# ARG HF_TOKEN
+# Принимаем токен как аргумент сборки (для Paperspace)
+ARG HF_TOKEN
 
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y python3.11 python3.11-venv python3-pip git && rm -rf /var/lib/apt/lists/*
@@ -24,17 +24,34 @@ RUN pip install --no-cache-dir -r requirements.txt
 ENV HF_HOME=/app/huggingface_cache
 ENV TRANSFORMERS_CACHE=/app/huggingface_cache
 
-# Упрощенная и надежная команда для скачивания
+# Универсальная команда для получения токена
 RUN --mount=type=secret,id=HF_TOKEN \
-    python3.11 -c "\
+    sh -c ' \
+        # Сначала пытаемся прочитать из секрета (для локальной сборки и GitHub Actions)
+        if [ -f /run/secrets/HF_TOKEN ]; then \
+            export HUGGING_FACE_TOKEN=$(cat /run/secrets/HF_TOKEN); \
+        # Если секрета нет, используем build-arg (для Paperspace)
+        elif [ -n "$HF_TOKEN" ]; then \
+            export HUGGING_FACE_TOKEN="$HF_TOKEN"; \
+        fi; \
+        \
+        # Проверяем, что токен в итоге был получен
+        if [ -z "$HUGGING_FACE_TOKEN" ]; then \
+            echo "Error: Hugging Face token not found." >&2; \
+            echo "Please provide it via secret mount or --build-arg HF_TOKEN." >&2; \
+            exit 1; \
+        fi; \
+        \
+        # Запускаем Python для скачивания модели
+        python3.11 -c "\
 from transformers import AutoModel, AutoProcessor; \
 import os; \
-model_name = 'google/medgemma-4b-it'; \
-token = open('/run/secrets/HF_TOKEN').read().strip(); \
-print(f'Downloading {model_name}...'); \
-AutoModel.from_pretrained(model_name, token=token, cache_dir='/app/huggingface_cache'); \
-AutoProcessor.from_pretrained(model_name, token=token, cache_dir='/app/huggingface_cache'); \
-print('Model downloaded successfully!')"
+model_name = '\''google/medgemma-4b-it'\''; \
+print(f '\''Downloading {model_name}...'\''); \
+AutoModel.from_pretrained(model_name, token=os.environ[\"HUGGING_FACE_TOKEN\"], cache_dir=\"/app/huggingface_cache\"); \
+AutoProcessor.from_pretrained(model_name, token=os.environ[\"HUGGING_FACE_TOKEN\"], cache_dir=\"/app/huggingface_cache\"); \
+print('\''Model downloaded successfully!'\'')" \
+    '
 
 # Финальный образ
 FROM nvidia/cuda:12.4.1-runtime-ubuntu22.04
