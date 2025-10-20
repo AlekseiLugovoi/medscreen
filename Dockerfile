@@ -25,9 +25,9 @@ ENV HF_HOME=/app/huggingface_cache
 ENV TRANSFORMERS_CACHE=/app/huggingface_cache
 
 # Попробуем использовать secret (для локальной сборки), если не получится - используем ARG (для Paperspace)
-RUN --mount=type=secret,id=hf_token \
-    if [ -f /run/secrets/hf_token ]; then \
-        export HF_TOKEN=$(cat /run/secrets/hf_token); \
+RUN --mount=type=secret,id=HF_TOKEN \
+    if [ -f /run/secrets/HF_TOKEN ]; then \
+        export HF_TOKEN=$(cat /run/secrets/HF_TOKEN); \
     fi; \
     if [ -z "$HF_TOKEN" ]; then \
         echo "Error: HF_TOKEN is not set. Pass it as --build-arg or via secret mount" && exit 1; \
