@@ -3,7 +3,7 @@
 # Сборка зависимостей и скачивание модели
 FROM nvidia/cuda:12.4.1-devel-ubuntu22.04 AS builder
 
-# Принимаем токен как аргумент сборки
+# Принимаем токен как аргумент сборки (для Paperspace)
 ARG HF_TOKEN
 
 ENV DEBIAN_FRONTEND=noninteractive
@@ -24,30 +24,46 @@ RUN pip install --no-cache-dir -r requirements.txt
 ENV HF_HOME=/app/huggingface_cache
 ENV TRANSFORMERS_CACHE=/app/huggingface_cache
 
-# Упрощенная команда для работы с токеном
+# Создаем скрипт для скачивания модели
+RUN echo 'import os\n\
+import sys\n\
+from transformers import AutoModel, AutoProcessor\n\
+\n\
+# Получаем токен из переменной окружения\n\
+token = os.environ.get("HUGGING_FACE_TOKEN", "")\n\
+if not token:\n\
+    print("Error: HUGGING_FACE_TOKEN not found in environment", file=sys.stderr)\n\
+    sys.exit(1)\n\
+\n\
+model_name = "google/medgemma-4b-it"\n\
+print(f"Downloading {model_name}...")\n\
+\n\
+AutoModel.from_pretrained(\n\
+    model_name,\n\
+    token=token,\n\
+    cache_dir="/app/huggingface_cache"\n\
+)\n\
+\n\
+AutoProcessor.from_pretrained(\n\
+    model_name,\n\
+    token=token,\n\
+    cache_dir="/app/huggingface_cache"\n\
+)\n\
+\n\
+print("Model downloaded successfully!")' > /tmp/download_model.py
+
+# Скачиваем модель
 RUN --mount=type=secret,id=HF_TOKEN \
-    python3.11 -c "\
-import os; \
-from transformers import AutoModel, AutoProcessor; \
-# Пытаемся получить токен из секрета (для локальной сборки и GitHub Actions) \
-token = None; \
-if os.path.exists('/run/secrets/HF_TOKEN'): \
-    with open('/run/secrets/HF_TOKEN', 'r') as f: \
-        token = f.read().strip(); \
-# Если секрета нет, используем build-arg (для Paperspace) \
-if not token: \
-    token = os.environ.get('HF_TOKEN', ''); \
-# Проверяем наличие токена \
-if not token: \
-    print('Error: Hugging Face token not found.'); \
-    print('Please provide it via secret mount or --build-arg HF_TOKEN.'); \
-    exit(1); \
-# Скачиваем модель \
-model_name = 'google/medgemma-4b-it'; \
-print(f'Downloading {model_name}...'); \
-AutoModel.from_pretrained(model_name, token=token, cache_dir='/app/huggingface_cache'); \
-AutoProcessor.from_pretrained(model_name, token=token, cache_dir='/app/huggingface_cache'); \
-print('Model downloaded successfully!')"
+    if [ -f /run/secrets/HF_TOKEN ]; then \
+        export HUGGING_FACE_TOKEN=$(cat /run/secrets/HF_TOKEN); \
+    elif [ -n "$HF_TOKEN" ]; then \
+        export HUGGING_FACE_TOKEN="$HF_TOKEN"; \
+    else \
+        echo "Error: Hugging Face token not found." >&2; \
+        echo "Please provide it via secret mount or --build-arg HF_TOKEN." >&2; \
+        exit 1; \
+    fi && \
+    python3.11 /tmp/download_model.py
 
 # Финальный образ
 FROM nvidia/cuda:12.4.1-runtime-ubuntu22.04
