@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1
+# syntax=ghcr.io/docker/dockerfile:1
 
 # Сборка зависимостей и скачивание модели
 FROM nvidia/cuda:12.4.1-devel-ubuntu22.04 AS builder
