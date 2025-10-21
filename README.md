@@ -6,10 +6,19 @@
 
 ## 🚀 Quick Start
 
-<details>
-<summary><strong>⚙️ Предварительная настройка (только для GPU)</strong></summary>
 
-Если планируете использовать GPU, установите NVIDIA Container Toolkit:
+### Online Demo
+Попробовать сервис можно здесь: 👉 [Запустить онлайн](https://d75658572430f4f78b2972d1c74f592ca.clg07azjl.paperspacegradient.com/)
+
+> Онлайн доступна только веб-версия сервиса \
+Для использования api - необходима локальная установка
+
+### Local Setup
+
+<details>
+<summary><strong>⚠️ Предварительная настройка NVIDIA Container Toolkit (только для GPU)</strong></summary>
+
+Если планируете использовать GPU, установите **NVIDIA Container Toolkit**:
 
 ```bash
 # Ubuntu/Debian
@@ -29,14 +38,7 @@ docker run --rm --gpus all nvidia/cuda:12.4.1-base-ubuntu22.04 nvidia-smi
 **Для CPU:** пропустите этот шаг и закомментируйте `runtime: nvidia` в `docker-compose.yml`
 
 </details>
-
-### Online Demo
-Попробовать сервис можно здесь: 👉 [Запустить онлайн](https://d75658572430f4f78b2972d1c74f592ca.clg07azjl.paperspacegradient.com/)
-
-> Онлайн доступна только веб-версия сервиса \
-Для использования api - необходима локальная установка
-
-### Local Setup
+<br>
 
 1.  **Клонируйте репозиторий:**
     ```sh
@@ -53,7 +55,7 @@ docker run --rm --gpus all nvidia/cuda:12.4.1-base-ubuntu22.04 nvidia-smi
 
 3.  **Запустите приложение (выберите один из вариантов):**
 
-    > **⚠️ Важно:** Для запуска с GPU (режим по умолчанию) убедитесь, что вы выполнили предварительную настройку NVIDIA Container Toolkit, описанную выше. Если у вас нет GPU, закомментируйте строку `runtime: nvidia` в файле `docker-compose.yml` для запуска на CPU.
+    > **⚠️ Важно:** Для запуска с GPU (режим по умолчанию) убедитесь, что вы выполнили предварительную настройку **NVIDIA Container Toolkit**, описанную выше. Если у вас нет GPU, закомментируйте строку `runtime: nvidia` в файле `docker-compose.yml` для запуска на CPU.
 
     <details>
     <summary><strong>Запуск через Docker (рекомендуется)</strong></summary>
