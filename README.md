@@ -4,60 +4,31 @@
 В основе — мультимодальная LLM **MedGemma-4b-it**, адаптированная для медицинских изображений.
 
 
-## 💻 Системные требования
+## 🚀 Quick Start
 
 <details>
-<summary><strong>Минимальные требования</strong></summary>
+<summary><strong>⚙️ Предварительная настройка (только для GPU)</strong></summary>
 
-- **GPU:** NVIDIA с поддержкой CUDA (минимум 8GB VRAM)
-- **RAM:** 16GB системной памяти
-- **Диск:** 20GB свободного места (для модели и зависимостей)
-- **ОС:** Linux с поддержкой Docker и `nvidia-container-toolkit`
-
-</details>
-
-<details>
-<summary><strong>Рекомендуемые требования</strong></summary>
-
-- **GPU:** NVIDIA RTX 3080/4080 или выше (12GB+ VRAM)
-- **RAM:** 32GB системной памяти
-- **CPU:** 8+ ядер
-
-</details>
-
-<details>
-<summary><strong>Проверка совместимости</strong></summary>
-
-<details>
-<summary>🐧 Linux</summary>
+Если планируете использовать GPU, установите NVIDIA Container Toolkit:
 
 ```bash
-# 1. Проверка CUDA драйвера
-nvidia-smi
+# Ubuntu/Debian
+curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | sudo gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
+curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list | \
+  sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | \
+  sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list
 
-# 2. Проверка Docker + NVIDIA Runtime
+sudo apt-get update && sudo apt-get install -y nvidia-container-toolkit
+sudo nvidia-ctk runtime configure --runtime=docker
+sudo systemctl restart docker
+
+# Проверка
 docker run --rm --gpus all nvidia/cuda:12.4.1-base-ubuntu22.04 nvidia-smi
 ```
-</details>
 
-<details>
-<summary>🪟 Windows (c WSL2)</summary>
-<br>
-Убедитесь, что у вас установлен <a href="https://developer.nvidia.com/cuda/wsl">драйвер NVIDIA для WSL</a> и в Docker Desktop включена поддержка GPU. Команды выполняются в PowerShell.
-
-```powershell
-# 1. Проверка CUDA в WSL
-wsl nvidia-smi
-
-# 2. Проверка Docker
-docker run --rm --gpus all nvidia/cuda:12.4.1-base-ubuntu22.04 nvidia-smi
-```
-</details>
+**Для CPU:** пропустите этот шаг и закомментируйте `runtime: nvidia` в `docker-compose.yml`
 
 </details>
-
-
-## 🚀 Quick Start
 
 ### Online Demo
 Попробовать сервис можно здесь: 👉 [Запустить онлайн](https://d75658572430f4f78b2972d1c74f592ca.clg07azjl.paperspacegradient.com/)
@@ -81,6 +52,8 @@ docker run --rm --gpus all nvidia/cuda:12.4.1-base-ubuntu22.04 nvidia-smi
     ```
 
 3.  **Запустите приложение (выберите один из вариантов):**
+
+    > **⚠️ Важно:** Для запуска с GPU (режим по умолчанию) убедитесь, что вы выполнили предварительную настройку NVIDIA Container Toolkit, описанную выше. Если у вас нет GPU, закомментируйте строку `runtime: nvidia` в файле `docker-compose.yml` для запуска на CPU.
 
     <details>
     <summary><strong>Запуск через Docker (рекомендуется)</strong></summary>
@@ -197,6 +170,27 @@ docker run --rm --gpus all nvidia/cuda:12.4.1-base-ubuntu22.04 nvidia-smi
 
 4.  **Протестируйте сервис:**
     Используйте [**демо-данные**](https://disk.yandex.ru/d/2ddI6aLMkoIYrA) для проверки работоспособности.
+
+## 💻 Системные требования
+
+<details>
+<summary><strong>Минимальные требования</strong></summary>
+
+- **GPU:** NVIDIA с поддержкой CUDA (минимум 8GB VRAM) *или CPU (медленнее в 10-50 раз)*
+- **RAM:** 16GB системной памяти
+- **Диск:** 20GB свободного места (для модели и зависимостей)
+- **ОС:** Linux с поддержкой Docker
+
+</details>
+
+<details>
+<summary><strong>Рекомендуемые требования</strong></summary>
+
+- **GPU:** NVIDIA RTX 3080/4080 или выше (12GB+ VRAM)
+- **RAM:** 32GB системной памяти
+- **CPU:** 8+ ядер
+
+</details>
 
 ## 🗂️ Поддерживаемые форматы
 Сервис принимает на вход **ZIP-архив**, содержащий одно исследование в одном из следующих форматов:
