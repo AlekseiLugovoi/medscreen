@@ -15,49 +15,69 @@ ENV PATH="/opt/venv/bin:$PATH"
 
 COPY requirements.txt .
 
-# Установка зависимостей
-RUN pip install --no-cache-dir torch==2.6.0+cu124 torchvision==0.21.0+cu124 \
-    --index-url https://download.pytorch.org/whl/cu124 && \
-    pip install --no-cache-dir -r requirements.txt && \
+# vllm pulls torch and other ML dependencies
+RUN pip install --no-cache-dir -r requirements.txt && \
     pip cache purge
 
-# Копируем приложение
+# Copy application
 COPY ./app ./app
-COPY ./.streamlit ./app/.streamlit
+COPY ./.streamlit ./.streamlit
 
 ENV HF_HOME=/app/huggingface_cache
-ENV TRANSFORMERS_CACHE=/app/huggingface_cache
 
-# Создаем entrypoint скрипт правильно
-COPY <<'EOF' /app/entrypoint.sh
+# Temp directory for vLLM file:// images
+RUN mkdir -p /app/tmp
+
+# Entrypoint: download model if needed, then start both services
+COPY <<'ENTRY' /app/entrypoint.sh
 #!/bin/bash
 set -e
 
+# Download model on first run
 if [ ! -d "/app/huggingface_cache/hub" ]; then
   echo "Downloading model..."
-  python3.11 -c '
-from transformers import AutoModel, AutoProcessor
+  python3.11 -c "
+from huggingface_hub import snapshot_download
 import os
-
-token = os.environ.get("HF_TOKEN")
+token = os.environ.get('HF_TOKEN')
 if token:
-    print(f"Using token: {token[:10]}...")
-    AutoModel.from_pretrained("google/medgemma-4b-it", token=token, cache_dir="/app/huggingface_cache")
-    AutoProcessor.from_pretrained("google/medgemma-4b-it", token=token, cache_dir="/app/huggingface_cache")
-    print("Model downloaded successfully!")
+    snapshot_download('google/medgemma-1.5-4b-it', token=token, cache_dir='/app/huggingface_cache')
+    print('Model downloaded successfully!')
 else:
-    print("Warning: HF_TOKEN not set, model will be downloaded on first inference")
-'
+    print('Warning: HF_TOKEN not set')
+"
 fi
 
-exec "$@"
-EOF
+# Start API backend (model lives here)
+echo "Starting API backend on port 8502..."
+uvicorn app.api:app --host 0.0.0.0 --port 8502 &
+API_PID=$!
+
+# Wait for API to be ready
+echo "Waiting for API to start..."
+for i in $(seq 1 60); do
+  if curl -s http://localhost:8502/health > /dev/null 2>&1; then
+    echo "API is ready!"
+    break
+  fi
+  sleep 2
+done
+
+# Start Streamlit frontend
+echo "Starting Streamlit on port 8501..."
+python -m streamlit run app/main.py \
+  --server.port=8501 \
+  --server.address=0.0.0.0 &
+ST_PID=$!
+
+# Wait for either process to exit
+wait -n $API_PID $ST_PID
+ENTRY
 
 RUN chmod +x /app/entrypoint.sh
 
 EXPOSE 8501 8502
 
-HEALTHCHECK CMD curl --fail http://localhost:8501/_stcore/health || exit 0
+HEALTHCHECK CMD curl --fail http://localhost:8502/health || exit 0
 
 ENTRYPOINT ["/app/entrypoint.sh"]
-CMD ["python", "-m", "streamlit", "run", "app/main.py", "--server.port=8501", "--server.address=0.0.0.0"]

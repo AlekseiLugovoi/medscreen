@@ -1,28 +1,54 @@
-import pandas as pd
-import io
-from typing import List, Dict   # + Dict
+from typing import List
 from fastapi import FastAPI, UploadFile, File
 
 from app.file_io import parse_zip_archive
 from app.data_validation import validate_series
-from app.ml_inference import PathologyClassifier, model_logger, get_gpu_memory_usage_str
+from app.ml_inference import CTScreener
 
 
 app = FastAPI(
     title="MedScreen API",
-    description="API для пакетной обработки медицинских исследований.",
-    version="1.0.0"
+    description="Chest CT pathology screening API powered by MedGemma + vLLM.",
+    version="2.0.0",
 )
 
-# Загружаем модель при старте
-model = PathologyClassifier()
+model = CTScreener()
+
+# All response keys — always present, None when not applicable
+_EMPTY_RESULT = {
+    "archive_name": None,
+    "series_uid": None,
+    "source_format": None,
+    "modality": None,
+    "body_part": None,
+    "num_frames": None,
+    "is_valid": False,
+    "verdict": None,
+    "abnormal_ratio": None,
+    "window_verdicts": None,
+    "window_reasonings": None,
+    "window_slices": None,
+    "total_slices": None,
+    "slices_processed": None,
+    "coverage_pct": None,
+    "inference_time": None,
+}
+
+
+@app.get("/health", tags=["System"])
+async def health():
+    """Health check endpoint."""
+    return {"status": "ok"}
 
 
 @app.post("/process", tags=["Processing"])
 async def process(files: List[UploadFile] = File(...)):
     """
-    Принимает один или несколько ZIP-архивов, обрабатывает их
-    и возвращает результат в виде JSON.
+    Accept one or more ZIP archives with CT studies,
+    return screening results as JSON.
+
+    Every result dict has the same set of keys.
+    If the study is invalid, inference keys are None.
     """
     all_results = []
 
@@ -32,50 +58,42 @@ async def process(files: List[UploadFile] = File(...)):
 
         if not series_data or error_message:
             all_results.append({
-                'archive_name': file.filename, 'series_uid': error_message or "Parsing error",
-                'is_valid': False, 'has_pathology': False, 'pred_pathology': "0.0000",
-                'ml_processing_time': "0.00s", 'source_format': 'N/A', 'modality': 'N/A',
-                'body_part': 'N/A', 'orientation': 'N/A', 'num_frames': 0
+                **_EMPTY_RESULT,
+                "archive_name": file.filename,
+                "series_uid": error_message or "Parsing error",
             })
             continue
 
         for series_uid, data in series_data.items():
-            meta = data['meta']
+            meta = data["meta"]
             validation_checks = validate_series(meta)
-            is_valid = all(check['status'] for check in validation_checks)
+            is_valid = all(check["status"] for check in validation_checks)
 
-            if is_valid and len(data['frames']) > 0:
-                inf = model.run_inference(data['frames'])
-                ml_time = inf.get('study_processing_time', 0.0)
-                # бинарные признаки по патологиям - используем bool, а не int
-                has_pneumonia = inf.get('pneumonia', {}).get('has_pathology', False)
-                has_lung_cancer = inf.get('lung_cancer', {}).get('has_pathology', False) 
-                has_aortic = inf.get('aortic_dilation', {}).get('has_pathology', False)
-                has_any_pathology = has_pneumonia or has_lung_cancer or has_aortic
-            else:
-                ml_time = 0.0
-                has_pneumonia = False
-                has_lung_cancer = False
-                has_aortic = False
-                has_any_pathology = False
+            entry = {
+                **_EMPTY_RESULT,
+                "archive_name": file.filename,
+                "series_uid": series_uid,
+                "source_format": meta.get("SourceFormat", "N/A"),
+                "modality": meta.get("Modality", "N/A"),
+                "body_part": meta.get("BodyPartExamined", "N/A"),
+                "num_frames": meta.get("num_frames", 0),
+                "is_valid": is_valid,
+            }
 
-            all_results.append({
-                'archive_name': file.filename,
-                'series_uid': series_uid,
-                'source_format': meta.get('SourceFormat', 'N/A'),
-                'modality': meta.get('Modality', 'N/A'),
-                'body_part': meta.get('BodyPartExamined', 'N/A'),
-                'orientation': meta.get('orientation', 'N/A'),
-                'num_frames': meta.get('num_frames', 0),
-                'is_valid': is_valid,
-                'has_any_pathology': has_any_pathology,
-                'pneumonia': has_pneumonia,
-                'lung_cancer': has_lung_cancer,
-                'aortic_dilation': has_aortic,
-                'ml_processing_time': f"{ml_time:.2f}s"
-            })
+            if is_valid and len(data["frames"]) > 0:
+                result = model.run(data["frames"])
+                entry.update({
+                    "verdict": result["verdict"],
+                    "abnormal_ratio": result["abnormal_ratio"],
+                    "window_verdicts": result["window_verdicts"],
+                    "window_reasonings": result["window_reasonings"],
+                    "window_slices": result["window_slices"],
+                    "total_slices": result["total_slices"],
+                    "slices_processed": result["slices_processed"],
+                    "coverage_pct": result["coverage_pct"],
+                    "inference_time": f"{result['inference_time']:.1f}s",
+                })
+
+            all_results.append(entry)
 
     return {"results": all_results}
-
-# Команда для локального запуска:
-# uvicorn api:app --host 0.0.0.0 --port 8000 --reload

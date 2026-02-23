@@ -1,34 +1,5 @@
-# --- Модуль для парсинга входных ZIP-архивов ---
-#
-# Основная функция: parse_zip_archive(uploaded_file)
-#
-# Флоу:
-# 1. Получает на вход загруженный ZIP-файл.
-# 2. Анализирует содержимое, определяет тип данных (DICOM, NIfTI, PNG/JPG).
-# 3. Вызывает соответствующий внутренний обработчик.
-# 4. Возвращает стандартизированный результат в виде кортежа: (data, error_message).
-#
-# Структура успешного вывода (data):
-# {
-#     "SeriesInstanceUID_1": {
-#         "frames": np.ndarray,  # 3D массив (срезы, высота, ширина)
-#         "meta": {
-#             "SourceFormat": str,      # "DICOM Series", "NIfTI", "Image Series"
-#             "Modality": str,          # "CT", "NIFTI", "IMAGE"
-#             "orientation": str,       # "Axial", "Sagittal", "Coronal", "Unknown"
-#             "num_frames": int,        # Фактическое количество срезов
-#             "StudyInstanceUID": str,  # UID исследования (если есть)
-#             "PixelSpacing": str,      # Расстояние между центрами пикселей
-#             "SliceThickness": str,    # Толщина среза
-#             "BodyPartExamined": str   # Исследуемая часть тела (если есть)
-#         }
-#     },
-#     # ... могут быть и другие серии, если найдены в DICOM
-# }
-#
-# При ошибке `data` будет `None`, а `error_message` - строкой с описанием.
-
 import io
+import tempfile
 import zipfile
 import numpy as np
 import pydicom
@@ -36,8 +7,9 @@ import nibabel
 from PIL import Image
 from collections import defaultdict
 
+
 def _get_dicom_orientation(ds):
-    """Определяет ориентацию срезов DICOM (Axial, Sagittal, Coronal)."""
+    """Determine DICOM slice orientation (Axial, Sagittal, Coronal)."""
     try:
         orient = ds.ImageOrientationPatient
         normal_vec = np.cross(np.array(orient[:3]), np.array(orient[3:]))
@@ -46,12 +18,13 @@ def _get_dicom_orientation(ds):
     except Exception:
         return "Unknown"
 
-def _parse_dicom_series(zf, dcm_files):
-    """Парсит серию DICOM-файлов из архива."""
-    if not dcm_files:
-        return None, "В архиве не найдено DICOM-файлов."
 
-    # Обработка многокадрового DICOM (если он один в архиве)
+def _parse_dicom_series(zf, dcm_files):
+    """Parse DICOM files from a ZIP archive."""
+    if not dcm_files:
+        return None, "No DICOM files found in archive."
+
+    # Multi-frame DICOM (single file with multiple frames)
     if len(dcm_files) == 1:
         with zf.open(dcm_files[0]) as f:
             ds = pydicom.dcmread(io.BytesIO(f.read()), force=True)
@@ -71,21 +44,20 @@ def _parse_dicom_series(zf, dcm_files):
             }
             return {series_uid: {"frames": volume, "meta": meta}}, None
 
-    # Обработка серии однокадровых DICOM
+    # Single-frame DICOM series
     series_dict = defaultdict(list)
     for filename in dcm_files:
         with zf.open(filename) as f:
             try:
                 ds = pydicom.dcmread(f, force=True)
                 if 'PixelData' in ds:
-                    # Если UID отсутствует, используем "default_series" как ключ
                     uid = getattr(ds, 'SeriesInstanceUID', 'default_series')
                     series_dict[uid].append(ds)
             except Exception:
                 continue
-    
+
     if not series_dict:
-        return None, "Не удалось прочитать DICOM-серии в архиве."
+        return None, "Failed to read DICOM series from archive."
 
     processed_series = {}
     for series_uid, datasets in series_dict.items():
@@ -104,63 +76,79 @@ def _parse_dicom_series(zf, dcm_files):
             "BodyPartExamined": getattr(proxy_ds, "BodyPartExamined", "N/A"),
         }
         processed_series[series_uid] = {"frames": volume, "meta": meta}
-        
+
     return processed_series, None
 
-def _parse_nifti(zf, nii_files):
-    """Парсит NIfTI-файл из архива."""
-    if len(nii_files) > 1:
-        return None, "Архив должен содержать только один NIfTI-файл."
-    
-    nii_filename = nii_files[0]
-    try:
-        with zf.open(nii_filename) as f:
-            # Nibabel работает с файлоподобными объектами
-            nii_img = nibabel.Nifti1Image.from_stream(io.BytesIO(f.read()))
-        
+
+def _parse_single_nifti(zf, nii_filename):
+    """Parse a single NIfTI file, return (series_uid, data_dict) or raise."""
+    suffix = ".nii.gz" if nii_filename.lower().endswith(".nii.gz") else ".nii"
+    with zf.open(nii_filename) as f:
+        raw = f.read()
+    with tempfile.NamedTemporaryFile(suffix=suffix) as tmp:
+        tmp.write(raw)
+        tmp.flush()
+        nii_img = nibabel.load(tmp.name)
         volume = nii_img.get_fdata().astype(np.float32)
         zooms = nii_img.header.get_zooms()
-        
         orientation_code = ''.join(nibabel.aff2axcodes(nii_img.affine))
-        if orientation_code.startswith(('L','R')) and orientation_code[1] in ('A','P'):
-             volume = np.transpose(volume, (2, 1, 0))
-             # Соответственно меняем местами размеры вокселя
-             pixel_spacing = f"[{zooms[1]:.4f}, {zooms[0]:.4f}]"
-             slice_thickness = f"{zooms[2]:.4f}"
-        else: # Предполагаем, что уже в нужной ориентации
-             pixel_spacing = f"[{zooms[0]:.4f}, {zooms[1]:.4f}]"
-             slice_thickness = f"{zooms[2]:.4f}"
+    if orientation_code.startswith(('L', 'R')) and orientation_code[1] in ('A', 'P'):
+        volume = np.transpose(volume, (2, 1, 0))
+        pixel_spacing = f"[{zooms[1]:.4f}, {zooms[0]:.4f}]"
+        slice_thickness = f"{zooms[2]:.4f}"
+    else:
+        pixel_spacing = f"[{zooms[0]:.4f}, {zooms[1]:.4f}]"
+        slice_thickness = f"{zooms[2]:.4f}"
+
+    # Use filename (without path) as series UID
+    name = nii_filename.rsplit("/", 1)[-1]
+    series_uid = f"NIfTI_{name}"
+
+    meta = {
+        "SourceFormat": "NIfTI",
+        "Modality": "NIFTI",
+        "orientation": "Axial",
+        "num_frames": volume.shape[0],
+        "StudyInstanceUID": "N/A",
+        "PixelSpacing": pixel_spacing,
+        "SliceThickness": slice_thickness,
+        "BodyPartExamined": "N/A",
+    }
+    return series_uid, {"frames": volume, "meta": meta}
 
 
-        series_uid = "NIfTI_" + nii_filename
-        meta = {
-            "SourceFormat": "NIfTI",
-            "Modality": "NIFTI",
-            "orientation": "Axial",
-            "num_frames": volume.shape[0],
-            "StudyInstanceUID": "N/A",
-            "PixelSpacing": pixel_spacing,
-            "SliceThickness": slice_thickness,
-            "BodyPartExamined": "N/A",
-        }
-        return {series_uid: {"frames": volume, "meta": meta}}, None
-    except Exception as e:
-        return None, f"Ошибка чтения NIfTI файла: {e}"
+def _parse_nifti(zf, nii_files):
+    """Parse one or more NIfTI files from a ZIP archive."""
+    processed = {}
+    errors = []
+
+    for nii_filename in sorted(nii_files):
+        try:
+            series_uid, data = _parse_single_nifti(zf, nii_filename)
+            processed[series_uid] = data
+        except Exception as e:
+            errors.append(f"{nii_filename}: {e}")
+
+    if not processed:
+        return None, f"Failed to read NIfTI files: {'; '.join(errors)}"
+
+    return processed, None
+
 
 def _parse_image_series(zf, img_files):
-    """Парсит серию изображений (PNG/JPG) из архива."""
-    img_files.sort() # Сортировка по имени файла для правильного порядка срезов
+    """Parse image series (PNG/JPG) from a ZIP archive."""
+    img_files.sort()
     frames = []
     for filename in img_files:
         with zf.open(filename) as f:
-            img = Image.open(io.BytesIO(f.read())).convert('L') # 'L' = grayscale
+            img = Image.open(io.BytesIO(f.read())).convert('L')
             frames.append(np.array(img))
-    
+
     if not frames:
-        return None, "Не найдено изображений в архиве."
+        return None, "No images found in archive."
 
     volume = np.stack(frames).astype(np.float32)
-    series_uid = "ImageSeries_" + zf.filename.split('/')[-1]
+    series_uid = "ImageSeries"
     meta = {
         "SourceFormat": "Image Series",
         "Modality": "IMAGE",
@@ -173,25 +161,25 @@ def _parse_image_series(zf, img_files):
     }
     return {series_uid: {"frames": volume, "meta": meta}}, None
 
+
 def parse_zip_archive(file_input):
-    """Определяет тип данных в ZIP и вызывает соответствующий парсер."""
+    """Detect data type in ZIP and dispatch to the appropriate parser."""
     try:
         if hasattr(file_input, 'read'):
             file_content = file_input.read()
         else:
             file_content = file_input
 
-        # Добавляем проверку размера
-        if len(file_content) > 500 * 1024 * 1024:  # 500MB лимит
-            return None, "Файл слишком большой (>500MB)"
-        
+        if len(file_content) > 500 * 1024 * 1024:
+            return None, "File too large (>500MB)."
+
         with zipfile.ZipFile(io.BytesIO(file_content)) as zf:
-            file_list = [f for f in zf.namelist() if not f.startswith('__MACOSX/') and not f.endswith('/')]
+            file_list = [f for f in zf.namelist()
+                         if not f.startswith('__MACOSX/') and not f.endswith('/')]
 
             if not file_list:
-                return None, "Архив пуст."
+                return None, "Archive is empty."
 
-            # Сначала проверяем на явные форматы, чтобы избежать ложных срабатываний
             nii_files = [f for f in file_list if f.lower().endswith(('.nii', '.nii.gz'))]
             if nii_files:
                 return _parse_nifti(zf, nii_files)
@@ -200,17 +188,15 @@ def parse_zip_archive(file_input):
             if img_files:
                 return _parse_image_series(zf, img_files)
 
-            # Если нет явных форматов, пробуем прочитать как DICOM
+            # Try DICOM as fallback
             try:
                 with zf.open(file_list[0]) as f:
                     pydicom.dcmread(f, stop_before_pixels=True, force=True)
-                # Если чтение успешно, считаем все файлы в архиве DICOM-серией
                 return _parse_dicom_series(zf, file_list)
             except pydicom.errors.InvalidDicomError:
-                # Если первый файл не DICOM, выдаем ошибку
-                return None, "В архиве не найдены поддерживаемые файлы (.nii, .png, .jpg) и он не является DICOM-серией."
+                return None, "No supported files found (.nii, .png, .jpg, DICOM)."
 
     except zipfile.BadZipFile:
-        return None, "Загруженный файл не является ZIP-архивом или поврежден."
+        return None, "File is not a valid ZIP archive."
     except Exception as e:
-        return None, f"Произошла непредвиденная ошибка: {e}"
+        return None, f"Unexpected error: {e}"

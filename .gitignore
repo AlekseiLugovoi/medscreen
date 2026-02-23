@@ -9,6 +9,7 @@
 # data
 dev/output/
 dev/data/
+dev/_old/
 tmp/
 *.zip
 *.csv

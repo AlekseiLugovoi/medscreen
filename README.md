@@ -1,27 +1,116 @@
-# 🩺 medscreen
-**MedScreen** — это сервис для анализа компьютерных томографий органов грудной клетки с целью выявления **исследований без патологий**.  
-Решение помогает снизить нагрузку на врачей-радиологов, автоматически отбирая нормальные КТ, чтобы врачи могли сосредоточиться на случаях с возможными аномалиями.  
-В основе — мультимодальная LLM **MedGemma-4b-it**, адаптированная для медицинских изображений.
+# MedScreen
 
+Chest CT screening: upload a study, get a verdict — **NORMAL** or **ABNORMAL**.
 
-## 🚀 Quick Start
+Powered by [MedGemma 1.5 4B](https://ai.google.dev/gemma/docs/medgemma) + [vLLM](https://github.com/vllm-project/vllm) structured output.
 
+[Online Demo](https://d75658572430f4f78b2972d1c74f592ca.clg07azjl.paperspacegradient.com/) · [Demo Data](https://drive.google.com/drive/folders/1ChmkPR-5OwZB8Ub9h23VuHoOiA2hX-gx?usp=sharing)
 
-### Online Demo
-Попробовать сервис можно здесь: 👉 [Запустить онлайн](https://d75658572430f4f78b2972d1c74f592ca.clg07azjl.paperspacegradient.com/)
+## Quick Start
 
-> Онлайн доступна только веб-версия сервиса \
-Для использования api - необходима локальная установка
+```sh
+git clone https://github.com/AlekseiLugovoi/medscreen.git
+cd medscreen
+echo "HF_TOKEN=hf_your_token_here" > .env
+DOCKER_BUILDKIT=1 docker compose up --build
+```
 
-### Local Setup
+> Model weights download on first launch (~5 min). Subsequent starts are instant.
+
+- **Web UI:** http://localhost:8501
+- **REST API:** http://localhost:8502  · [Swagger docs](http://localhost:8502/docs)
+
+## Usage
+
+**curl:**
+```bash
+curl -X POST http://localhost:8502/process \
+     -F "files=@normal_dicom_chest.zip" \
+     -F "files=@abnormal_nifti_covid_ct4.zip"
+```
+
+**Python:**
+```python
+import requests
+
+resp = requests.post(
+    "http://localhost:8502/process",
+    files=[
+        ("files", ("normal_dicom_chest.zip", open("normal_dicom_chest.zip", "rb"), "application/zip")),
+        ("files", ("abnormal_nifti_covid_ct4.zip", open("abnormal_nifti_covid_ct4.zip", "rb"), "application/zip")),
+    ],
+)
+
+for r in resp.json()["results"]:
+    print(f"{r['archive_name']}: {r['verdict']} ({r['abnormal_ratio']:.0%} abnormal)")
+```
 
 <details>
-<summary><strong>⚠️ Предварительная настройка NVIDIA Container Toolkit (только для GPU)</strong></summary>
+<summary>Example response</summary>
 
-Если планируете использовать GPU, установите **NVIDIA Container Toolkit**:
+```json
+{
+  "results": [
+    {
+      "archive_name": "normal_dicom_chest.zip",
+      "series_uid": "1.2.840.113704...",
+      "source_format": "DICOM Series",
+      "modality": "CT",
+      "body_part": "CHEST",
+      "num_frames": 451,
+      "is_valid": true,
+      "verdict": "NORMAL",
+      "abnormal_ratio": 0.0,
+      "window_verdicts": ["NORMAL", "NORMAL", "NORMAL", "NORMAL", "NORMAL"],
+      "slices_processed": 100,
+      "coverage_pct": 22.2,
+      "inference_time": "35.5s"
+    },
+    {
+      "archive_name": "abnormal_nifti_covid_ct4.zip",
+      "series_uid": "NIfTI_study_0255.nii.gz",
+      "source_format": "NIfTI",
+      "modality": "NIFTI",
+      "num_frames": 367,
+      "is_valid": true,
+      "verdict": "ABNORMAL",
+      "abnormal_ratio": 0.4,
+      "window_verdicts": ["NORMAL", "ABNORMAL", "NORMAL", "ABNORMAL", "NORMAL"],
+      "slices_processed": 100,
+      "coverage_pct": 27.2,
+      "inference_time": "10.1s"
+    }
+  ]
+}
+```
+
+</details>
+
+## Supported Formats
+
+Pack your data into a ZIP. Format is detected automatically:
+
+- **DICOM** — `.dcm` files from one series, or a single multi-frame `.dcm`
+- **NIfTI** — `.nii` / `.nii.gz` volumes (each file screened independently)
+- **Images** — `.png` / `.jpg` files (treated as one series)
+
+## Setup Details
+
+<details>
+<summary>System requirements</summary>
+
+| | Minimum | Recommended |
+|---|---|---|
+| GPU | NVIDIA, 8 GB VRAM | RTX 3080/4080+ (12 GB+) |
+| RAM | 16 GB | 32 GB |
+| Disk | 20 GB | 20 GB |
+
+</details>
+
+<details>
+<summary>NVIDIA Container Toolkit (GPU)</summary>
 
 ```bash
-# Ubuntu/Debian
 curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | sudo gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
 curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list | \
   sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | \
@@ -30,191 +119,60 @@ curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-contai
 sudo apt-get update && sudo apt-get install -y nvidia-container-toolkit
 sudo nvidia-ctk runtime configure --runtime=docker
 sudo systemctl restart docker
-
-# Проверка
-docker run --rm --gpus all nvidia/cuda:12.4.1-base-ubuntu22.04 nvidia-smi
 ```
 
-**Для CPU:** пропустите этот шаг и закомментируйте `runtime: nvidia` в `docker-compose.yml`
-
 </details>
 
-1.  **Клонируйте репозиторий:**
-    ```sh
-    git clone https://github.com/AlekseiLugovoi/medscreen.git
-    cd medscreen
-    ```
-
-2.  **Создайте файл .env:**
-    ```sh
-    # Замените ... вашим токеном от Hugging Face
-    # или воспользуйтесь нашим: hf_ nNvENhqrQTVFgRxSGUUpYNudvpEgQaNOWZ
-    echo "HF_TOKEN=hf_..." > .env
-    ```
-
-3.  **Запустите приложение (выберите один из вариантов):**
-
-    > **⚠️ Важно:** Для запуска с GPU (режим по умолчанию) убедитесь, что вы выполнили предварительную настройку **NVIDIA Container Toolkit**, описанную выше. Если у вас нет GPU, закомментируйте строку `runtime: nvidia` в файле `docker-compose.yml` для запуска на CPU.
-
-    <details>
-    <summary><strong>Запуск через Docker (рекомендуется)</strong></summary>
-    
-    > **Примечание:** Веса модели скачиваются при первом запуске контейнера, что может занять до 5 минут в зависимости от скорости интернета. Последующие запуски будут мгновенными, так как модель кэшируется внутри контейнера. Для безопасной передачи Hugging Face токена используется `DOCKER_BUILDKIT=1`.
-
-    <details>
-    <summary>🌐 Только веб-интерфейс (по умолчанию)</summary>
-    
-    Запускает автономное веб-приложение с локальной моделью.
-    ```sh
-    # Эта команда запустит сервис с профилем "default"
-    DOCKER_BUILDKIT=1 docker compose --profile default up --build
-    ```
-    **Доступ:** `http://localhost:8501`
-    </details>
-
-    <details>
-    <summary>⚙️ Только REST API</summary>
-    
-    Запускает только API-сервис для автоматизации и пакетной обработки.
-    ```sh
-    # Явно указываем профиль "api"
-    DOCKER_BUILDKIT=1 docker compose --profile api up --build
-    ```
-    **Доступ:**
-    - **API:** `http://localhost:8502`
-    - **Документация (Swagger):** `http://localhost:8502/docs`
-
-    **Пример запроса:**
-    ```bash
-    # Отправка двух архивов для анализа
-    curl -X POST "http://localhost:8502/process" \
-         -H "Content-Type: multipart/form-data" \
-         -F "files=@/путь/к/study1.zip" \
-         -F "files=@/путь/к/study2.zip"
-    ```
-    
-    **Пример ответа (JSON):**
-    ```json
-    {
-      "results": [
-        {
-          "archive_name": "study1.zip",
-          "series_uid": "1.2.840.113704.1.111.4980...",
-          "source_format": "DICOM Series",
-          "modality": "CT",
-          "body_part": "CHEST",
-          "orientation": "Axial",
-          "num_frames": 120,
-          "is_valid": true,
-          "has_any_pathology": false,
-          "pneumonia": false,
-          "lung_cancer": false,
-          "aortic_dilation": false,
-          "ml_processing_time": "5.12s"
-        },
-        {
-          "archive_name": "study2.zip",
-          "series_uid": "1.3.6.1.4.1.14519.5.2.1...",
-          "source_format": "DICOM Series",
-          "modality": "CT",
-          "body_part": "CHEST",
-          "orientation": "Axial",
-          "num_frames": 95,
-          "is_valid": true,
-          "has_any_pathology": true,
-          "pneumonia": true,
-          "lung_cancer": false,
-          "aortic_dilation": false,
-          "ml_processing_time": "4.31s"
-        }
-      ]
-    }
-    ```
-    </details>
-
-
-    <details>
-    <summary>🔗 Оба сервиса вместе</summary>
-    
-    Запускает и веб-интерфейс, и REST API.
-    ```sh
-    # Указываем оба профиля
-    DOCKER_BUILDKIT=1 docker compose --profile default --profile api up --build
-    ```
-    **Доступ:**
-    - **Веб-интерфейс:** `http://localhost:8501`
-    - **REST API:** `http://localhost:8502`
-    </details>
-
-    </details>
-
-
-    <details>
-    <summary><strong>Локальная разработка (Conda)</strong></summary>
-
-    > **Примечание:** Веса модели будут скачаны при первом запуске приложения (может занять 3-5 минут).
-
-    ```sh
-    # Создание окружения
-    conda create -n medscreen python=3.11 --yes
-    conda activate medscreen
-    pip install -r requirements.txt
-
-    # Запуск веб-интерфейса
-    cd medscreen
-    PYTHONPATH=$PWD streamlit run app/main.py --server.port 8501
-
-    # Или запуск API (в отдельном терминале)
-    PYTHONPATH=$PWD uvicorn app.api:app --host 0.0.0.0 --port 8502
-    ```
-    </details>
-
-4.  **Протестируйте сервис:**
-    Используйте [**демо-данные**](https://disk.yandex.ru/d/2ddI6aLMkoIYrA) для проверки работоспособности.
-
-## 💻 Системные требования
-
 <details>
-<summary><strong>Минимальные требования</strong></summary>
+<summary>Local development (without Docker)</summary>
 
-- **GPU:** NVIDIA с поддержкой CUDA (минимум 8GB VRAM) *или CPU (медленнее в 10-50 раз)*
-- **RAM:** 16GB системной памяти
-- **Диск:** 20GB свободного места (для модели и зависимостей)
-- **ОС:** Linux с поддержкой Docker
+```sh
+conda create -n medscreen python=3.11 --yes
+conda activate medscreen
+pip install -r requirements.txt
+```
+
+Start the API backend (loads the model):
+```sh
+CUDA_VISIBLE_DEVICES=0 uvicorn app.api:app --port 8502
+```
+
+Start the Streamlit frontend (separate terminal):
+```sh
+python -m streamlit run app/main.py --server.port 8501
+```
+
+> The API works standalone — Streamlit is optional.
 
 </details>
 
 <details>
-<summary><strong>Рекомендуемые требования</strong></summary>
+<summary>Architecture</summary>
 
-- **GPU:** NVIDIA RTX 3080/4080 или выше (12GB+ VRAM)
-- **RAM:** 32GB системной памяти
-- **CPU:** 8+ ядер
-
-</details>
-
-## 🗂️ Поддерживаемые форматы
-Сервис принимает на вход **ZIP-архив**, содержащий одно исследование в одном из следующих форматов:
-- **Серия DICOM:** множество файлов (часто с расширением `.dcm` или без него).
-- **Многокадровый DICOM:** один `.dcm` файл, содержащий все срезы.
-- **NIfTI:** один файл (`.nii` или `.nii.gz`).
-- **Серия изображений:** множество файлов (`.png`, `.jpg`).
-
-## 📂 Архитектура
+```
+┌─────────────┐       HTTP        ┌──────────────────────┐
+│  Streamlit   │ ───────────────→ │  FastAPI + CTScreener │
+│  (UI, :8501) │ ←─────────────── │  (model, :8502)      │
+└─────────────┘    JSON result    └──────────────────────┘
+       ↑                                    ↑
+    browser                          curl / pipelines
+```
 
 ```
 medscreen/
-├── app/                    # Код приложения
-│   ├── main.py            # Streamlit интерфейс  
-│   ├── api.py             # FastAPI сервис
-│   ├── ml_inference.py    # ML-модель (MedGemma)
-│   └── ...                # Другие модули
-├── Dockerfile             # Единый образ для обоих сервисов
-├── docker-compose.yml     # Конфигурация запуска
-└── requirements.txt       # Зависимости
+├── app/
+│   ├── main.py             # Streamlit entry point
+│   ├── pages.py            # UI pages (preview, batch, API)
+│   ├── api.py              # FastAPI backend
+│   ├── ml_inference.py     # CTScreener (MedGemma + vLLM)
+│   ├── ml_processing.py    # HTTP client to API
+│   ├── file_io.py          # ZIP parsing (DICOM, NIfTI, PNG)
+│   ├── data_validation.py  # Series metadata validation
+│   └── visualization.py    # CT windowing, GIF animation
+├── dev/                    # Research notebooks & experiments
+├── Dockerfile
+├── docker-compose.yml
+└── requirements.txt
 ```
-**Принцип:** Один Docker-образ, два независимых сервиса с разными командами запуска.
 
-## 🔗 Ссылки
-- **Презентация Проекта:** [https://disk.yandex.ru/d/LpKu44Kq0Xa_0w](https://disk.yandex.ru/d/LpKu44Kq0Xa_0w)
-- **Онлайн-сервис:** [https://d75658572430f4f78b2972d1c74f592ca.clg07azjl.paperspacegradient.com](https://d75658572430f4f78b2972d1c74f592ca.clg07azjl.paperspacegradient.com)
+</details>

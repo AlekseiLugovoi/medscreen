@@ -1,17 +1,38 @@
+import os
+import requests
 import streamlit as st
-from app.ml_inference import PathologyClassifier
-from typing import Dict, Any
-import numpy as np
 
-@st.cache_resource
-def get_model() -> PathologyClassifier:
-    """Загружает и кэширует ML-модель."""
-    return PathologyClassifier()
+API_URL = os.environ.get("MEDSCREEN_API_URL", "http://localhost:8502")
 
-@st.cache_data(show_spinner="Анализ срезов моделью...")
-def run_pathology_inference(_model: PathologyClassifier, volume_3d: np.ndarray, threshold: float = 0.1) -> Dict[str, Any]:
-    """
-    Кэшируемая обертка для запуска инференса модели.
-    Возвращает словарь с результатами.
-    """
-    return _model.run_inference(volume_3d)
+
+def check_api_health() -> bool:
+    """Check if the API backend is available."""
+    try:
+        resp = requests.get(f"{API_URL}/health", timeout=3)
+        return resp.status_code == 200
+    except requests.ConnectionError:
+        return False
+
+
+def _call_api(zip_bytes: bytes, filename: str) -> list:
+    """Send ZIP to API, return list of results."""
+    resp = requests.post(
+        f"{API_URL}/process",
+        files={"files": (filename, zip_bytes, "application/zip")},
+        timeout=600,
+    )
+    resp.raise_for_status()
+    return resp.json()["results"]
+
+
+@st.cache_data(show_spinner="Running ML screening...")
+def run_inference(zip_bytes: bytes, filename: str = "study.zip") -> dict:
+    """Single study inference (for preview). Returns first result."""
+    results = _call_api(zip_bytes, filename)
+    return results[0] if results else None
+
+
+@st.cache_data(show_spinner="Processing archive...")
+def run_inference_batch(zip_bytes: bytes, filename: str = "study.zip") -> list:
+    """Batch inference. Returns all results (one per study in ZIP)."""
+    return _call_api(zip_bytes, filename)

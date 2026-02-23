@@ -1,5 +1,5 @@
 services:
-  medscreen-app:
+  medscreen:
     image: medscreen:latest
     build:
       context: .
@@ -8,34 +8,9 @@ services:
         - HF_TOKEN
       args:
         HF_TOKEN: ${HF_TOKEN}
-    container_name: medscreen-app
+    container_name: medscreen
     ports:
       - "8501:8501"
-    env_file:
-      - .env
-    environment:
-      - PYTHONUNBUFFERED=1
-      - NVIDIA_VISIBLE_DEVICES=all
-      - PYTHONPATH=/app
-      - HF_HOME=/app/huggingface_cache
-      - TRANSFORMERS_CACHE=/app/huggingface_cache
-      - HF_TOKEN=${HF_TOKEN}
-    restart: unless-stopped
-    runtime: nvidia
-    command: ["python", "-m", "streamlit", "run", "app/main.py", "--server.port=8501", "--server.address=0.0.0.0"]
-    profiles: ["default", "app"]
-
-  medscreen-api:
-    image: medscreen:latest
-    build:
-      context: .
-      dockerfile: Dockerfile
-      secrets:
-        - HF_TOKEN
-      args:
-        HF_TOKEN: ${HF_TOKEN}
-    container_name: medscreen-api
-    ports:
       - "8502:8502"
     env_file:
       - .env
@@ -44,12 +19,9 @@ services:
       - NVIDIA_VISIBLE_DEVICES=all
       - PYTHONPATH=/app
       - HF_HOME=/app/huggingface_cache
-      - TRANSFORMERS_CACHE=/app/huggingface_cache
       - HF_TOKEN=${HF_TOKEN}
     restart: unless-stopped
     runtime: nvidia
-    command: ["uvicorn", "app.api:app", "--host", "0.0.0.0", "--port", "8502"]
-    profiles: ["api"]
 
 secrets:
   HF_TOKEN:

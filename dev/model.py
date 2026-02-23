@@ -1,7 +1,6 @@
 import os
 import json
 import time
-import logging
 import tempfile
 import numpy as np
 from PIL import Image
@@ -11,23 +10,11 @@ from vllm import LLM, SamplingParams
 from vllm.sampling_params import StructuredOutputsParams
 
 
-# --- Логирование ---
-logger = logging.getLogger("medscreen.model")
-logger.setLevel(logging.INFO)
-logger.propagate = False
-if not logger.handlers:
-    handler = logging.StreamHandler()
-    handler.setFormatter(logging.Formatter("%(asctime)s [MODEL] %(levelname)s: %(message)s"))
-    logger.addHandler(handler)
-
-
-# --- Схема structured output ---
 class CTVerdict(BaseModel):
     reasoning: constr(max_length=150)
     verdict: Literal["NORMAL", "ABNORMAL"]
 
 
-# --- Промпты ---
 SYSTEM_PROMPT = (
     "You are an expert chest CT radiologist. "
     "Analyze the provided CT slices carefully. "
@@ -70,28 +57,26 @@ class CTScreener:
       - n <= window_size → одно окно со всеми срезами
       - n < window_size * n_windows → увеличиваем кол-во окон
         с перекрытием, размер окна НЕ уменьшается
+
+    Использование:
+      screener = CTScreener()
+      result = screener.run(volume)  # volume: np.ndarray (slices, H, W)
     """
 
     def __init__(
         self,
         model: str = "google/medgemma-1.5-4b-it",
-        tmp_dir: str = os.path.join(os.path.dirname(os.path.dirname(__file__)), "tmp"),
+        data_dir: str = "/home/a-lugovoi/Git/medscreen/dev/",
         gpu_memory: float = 0.3,
         max_model_len: int = 8192,
         window_size: int = 20,
         n_windows: int = 5,
         threshold: float = 0.2,
     ):
+        self.data_dir = data_dir
         self.window_size = window_size
         self.n_windows = n_windows
         self.threshold = threshold
-
-        # Директория для временных файлов (vLLM требует file:// URL)
-        self.tmp_dir = tmp_dir
-        os.makedirs(tmp_dir, exist_ok=True)
-
-        logger.info(f"Загрузка модели '{model}'...")
-        t0 = time.time()
 
         self.llm = LLM(
             model=model,
@@ -99,7 +84,7 @@ class CTScreener:
             max_model_len=max_model_len,
             gpu_memory_utilization=gpu_memory,
             dtype="bfloat16",
-            allowed_local_media_path=tmp_dir,
+            allowed_local_media_path=data_dir,
             disable_log_stats=True,
         )
 
@@ -111,14 +96,8 @@ class CTScreener:
             ),
         )
 
-        logger.info(f"Модель загружена за {time.time() - t0:.1f}с")
-
     @staticmethod
-    def hu_to_pil(
-        slice_2d: np.ndarray,
-        center: float = -600,
-        width: float = 1500,
-    ) -> Image.Image:
+    def hu_to_pil(slice_2d: np.ndarray, center: float = -600, width: float = 1500) -> Image.Image:
         """
         HU → 8-bit RGB PIL. Если данные уже 0-255 (PNG), пропускаем windowing.
 
@@ -178,15 +157,10 @@ class CTScreener:
         n = volume.shape[0]
         ws, nw, windows = self._build_windows(n)
 
-        logger.info(
-            f"Инференс: {nw} окон × {ws} срезов = "
-            f"{nw * ws}/{n} ({nw * ws / n * 100:.0f}%)"
-        )
-
         all_messages = []
         window_meta = []
 
-        with tempfile.TemporaryDirectory(dir=self.tmp_dir) as tmpdir:
+        with tempfile.TemporaryDirectory(dir=self.data_dir) as tmpdir:
             for w, (start, end) in enumerate(windows):
                 image_urls = []
                 for i in range(start, end):
@@ -234,12 +208,6 @@ class CTScreener:
 
         abnormal_ratio = verdicts.count("ABNORMAL") / len(verdicts)
         final = "ABNORMAL" if abnormal_ratio >= self.threshold else "NORMAL"
-
-        logger.info(
-            f"Результат: {final} | "
-            f"ABNORMAL окон: {verdicts.count('ABNORMAL')}/{nw} "
-            f"({abnormal_ratio:.0%}) | {elapsed:.1f}с"
-        )
 
         return {
             "verdict": final,

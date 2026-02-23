@@ -4,316 +4,316 @@ import pandas as pd
 from app.file_io import parse_zip_archive
 from app.data_validation import validate_series
 from app.visualization import prepare_frames_for_display, create_gif
-from app.ml_processing import get_model, run_pathology_inference
+from app.ml_processing import run_inference, run_inference_batch, check_api_health
 
-# Окна визуализации для КТ (Center, Width)
+# CT visualization windows (Center, Width)
 CT_WINDOWS = {
-    "Легочное (Lung)": (-600, 1500),
-    "Мягкотканное (Soft Tissue)": (40, 400),
-    "Костное (Bone)": (700, 1500),
+    "Lung": (-600, 1500),
+    "Soft Tissue": (40, 400),
+    "Bone": (700, 1500),
 }
 
+
 def reset_session_state():
-    """Сбрасывает состояние сессии при загрузке нового файла."""
+    """Reset session state when a new file is uploaded."""
     st.session_state.clear()
 
 
 def show_about_page():
-    st.title("ℹ️ О проекте")
+    st.title("About")
     st.markdown("""
-        **MedScreen** — это интерактивный инструмент для предобработки и анализа медицинских изображений. Приложение имеет несколько режимов работы:
-        
-        - **Превью исследования:** Интерактивный анализ одного исследования. Позволяет детально изучить срезы, метаданные и результаты ML-модели.
-        - **Пакетная обработка:** Автоматическая обработка нескольких архивов с исследованиями и формирование сводного CSV-отчета.
-        - **API-интерфейс:** Демонстрация того, как можно было бы интегрировать сервис в автоматизированные пайплайны.
+        **MedScreen** is a chest CT pathology screening tool powered by
+        [MedGemma](https://ai.google.dev/gemma/docs/medgemma) vision-language model.
 
-        ### Ключевые технологии:
-        - **Streamlit:** Создание интерактивного веб-интерфейса.
-        - **Pydicom, Nibabel, Pillow:** Чтение и парсинг форматов DICOM, NIfTI и изображений.
-        - **Numpy:** Обработка изображений и манипуляции с пиксельными данными.
-        - **Imageio:** Создание анимированных GIF.
-        - **PyTorch & Transformers:** Работа ML-модели.
+        The application provides several modes of operation:
+
+        - **Study Preview:** Interactive analysis of a single CT study.
+          Upload a ZIP archive, inspect slices, metadata, and run ML screening.
+        - **Batch Processing:** Automatic processing of multiple studies
+          with a downloadable CSV report.
+        - **API:** REST endpoint for integration into automated pipelines.
+
+        ### Key Technologies
+        - **Streamlit** — interactive web interface
+        - **vLLM + MedGemma** — ML inference with structured output
+        - **FastAPI** — REST API backend
+        - **Pydicom, Nibabel** — DICOM and NIfTI parsing
     """)
-    st.warning("> ⚠️ **Внимание:** Прототип не предназначен для клинического применения.")
+    st.warning("> This is a research prototype. Not intended for clinical use.")
 
 
 def show_preview_page():
-    st.title("🔬 Превью исследования")
+    st.title("Study Preview")
 
-    # --- Левая колонка для управления ---
     col1, _ = st.columns([1, 1])
 
     with col1:
-        # --- ЭТАП 1: Загрузка файла ---
-        st.subheader("Шаг 1: Загрузите ZIP-архив")
-        
+        # --- Step 1: Upload ---
+        st.subheader("Step 1: Upload ZIP Archive")
+
         uploaded_file = st.file_uploader(
-            "Загрузите исследование в ZIP-архиве",
+            "Upload a CT study in a ZIP archive",
             type=["zip"],
             on_change=reset_session_state,
-            label_visibility="collapsed"
+            label_visibility="collapsed",
         )
 
-        with st.expander("Требования к содержимому архива"):
+        with st.expander("Supported formats"):
             st.markdown("""
-            Архив должен содержать **одно исследование** в одном из следующих форматов:
-            - **Серия DICOM:** множество файлов (часто с расширением `.dcm` или без него)
-            - **Многокадровый DICOM:** один `.dcm` файл, содержащий все срезы
-            - **NIfTI:** один файл (`.nii` или `.nii.gz`)
-            - **Серия изображений:** множество файлов (`.png`, `.jpg`)
+            Upload a ZIP with one study. Format is detected automatically:
+            - **DICOM** — `.dcm` files from one series (or one multi-frame `.dcm`)
+            - **NIfTI** — single `.nii` / `.nii.gz` file
+            - **Images** — `.png` / `.jpg` files (treated as one series)
             """)
 
         if not uploaded_file:
             return
 
-        if 'file_content' not in st.session_state:
+        if "file_content" not in st.session_state:
             st.session_state.file_content = uploaded_file.getvalue()
 
-        if 'processed_data' not in st.session_state:
-            with st.spinner("Идет обработка..."):
-                # Передаем в парсер содержимое файла, а не сам объект
+        if "processed_data" not in st.session_state:
+            with st.spinner("Processing..."):
                 data, error_message = parse_zip_archive(st.session_state.file_content)
                 if error_message:
-                    st.error(f"Ошибка чтения архива: {error_message}")
-                    # Очищаем, чтобы можно было попробовать снова с тем же файлом
+                    st.error(f"Error reading archive: {error_message}")
                     del st.session_state.file_content
                     return
                 st.session_state.processed_data = data
                 st.rerun()
 
-        # --- ЭТАП 2: Валидация данных ---
-        st.subheader("Шаг 2: Валидация данных")
-        
-        # Берем первую найденную серию
+        # --- Step 2: Validation ---
+        st.subheader("Step 2: Data Validation")
+
         series_uid = list(st.session_state.processed_data.keys())[0]
         series_data = st.session_state.processed_data[series_uid]
         meta = series_data["meta"]
 
-        with st.expander("Чек-лист валидации"):
+        with st.expander("Validation checklist"):
             validation_results = validate_series(meta)
-            all_valid = all(check['status'] for check in validation_results)
+            all_valid = all(check["status"] for check in validation_results)
             for check in validation_results:
-                st.caption(f"{'✅' if check['status'] else '❌'} {check['check']}: {check['message']}")
-            if all_valid: st.success("Все проверки пройдены!")
-            else: st.warning("Найдены несоответствия. Результаты могут быть неточными.")
+                icon = "✅" if check["status"] else "❌"
+                st.caption(f"{icon} {check['check']}: {check['message']}")
+            if all_valid:
+                st.success("All checks passed!")
+            else:
+                st.warning("Some checks failed. Results may be inaccurate.")
 
-        with st.expander("Метаданные"):
+        with st.expander("Metadata"):
             st.json({k: str(v) for k, v in meta.items()})
 
-        # --- ЭТАП 3: Визуализация и анализ ---
-        st.subheader("Шаг 3: Визуализация и анализ")
-        
+        # --- Step 3: Visualization & Screening ---
+        st.subheader("Step 3: Visualization & Screening")
+
         viz_container = st.container(border=True)
         with viz_container:
             viz_cols = st.columns([3, 1])
             with viz_cols[0]:
                 if meta.get("Modality") == "CT":
-                    st.selectbox("Окно визуализации:", options=list(CT_WINDOWS.keys()), key='window_name_temp', label_visibility="collapsed")
+                    st.selectbox(
+                        "Visualization window:",
+                        options=list(CT_WINDOWS.keys()),
+                        key="window_name_temp",
+                        label_visibility="collapsed",
+                    )
                 else:
                     st.session_state.window_name_temp = "Default"
-                    st.text_input("Окно визуализации:", "Default", disabled=True, label_visibility="collapsed")
-            
+                    st.text_input(
+                        "Visualization window:", "Default",
+                        disabled=True, label_visibility="collapsed",
+                    )
+
             with viz_cols[1]:
-                if st.button("Показать", type="primary", use_container_width=True):
+                if st.button("Show", type="primary", use_container_width=True):
                     st.session_state.show_visualization = True
                     st.session_state.active_window_name = st.session_state.window_name_temp
 
+    # --- Visualization block ---
+    if st.session_state.get("show_visualization"):
+        active_window = st.session_state.get("active_window_name")
 
-    # --- Блок визуализации (отображается после нажатия кнопки) ---
-    if st.session_state.get('show_visualization'):
-        active_window = st.session_state.get('active_window_name')
-        
         display_frames = prepare_frames_for_display(series_data, active_window, CT_WINDOWS)
         gif_bytes = create_gif(display_frames)
         num_frames = len(display_frames)
 
-        if 'slice_idx' not in st.session_state:
+        if "slice_idx" not in st.session_state:
             st.session_state.slice_idx = num_frames // 2
 
         vis_col1, vis_col2, vis_col3 = st.columns(3)
 
         with vis_col1:
-            st.subheader("Анимация")
+            st.subheader("Animation")
             st.image(gif_bytes, use_container_width=True)
 
         with vis_col2:
-            st.subheader("Предпросмотр среза")
+            st.subheader("Slice Preview")
             st.image(display_frames[st.session_state.slice_idx], use_container_width=True)
-            st.slider("Срез", 0, num_frames - 1, key='slice_idx', label_visibility="collapsed")
-            st.caption(f"Показан срез: {st.session_state.slice_idx + 1} / {num_frames}")
+            st.slider("Slice", 0, num_frames - 1, key="slice_idx", label_visibility="collapsed")
+            st.caption(f"Slice: {st.session_state.slice_idx + 1} / {num_frames}")
 
         with vis_col3:
-            st.subheader("Возможные патологии") # ИЗМЕНЕНИЕ: Заголовок
-            if 'pathology_results' not in st.session_state:
-                if st.button("Найти патологии", type="primary", use_container_width=True):
-                    model = get_model()
-                    results = run_pathology_inference(model, series_data['frames'])
-                    st.session_state.pathology_results = results
-                    st.session_state.study_has_pathology = results.get('study_has_pathology', False)
-                    st.session_state.study_prob_pathology = results.get('study_prob_pathology', 0.0)
+            st.subheader("Pathology Screening")
+
+            if not check_api_health():
+                st.error("API backend is not available. Make sure it is running.")
+                return
+
+            if "screening_results" not in st.session_state:
+                if st.button("Run Screening", type="primary", use_container_width=True):
+                    result = run_inference(
+                        st.session_state.file_content,
+                        filename=uploaded_file.name,
+                    )
+                    st.session_state.screening_results = result
                     st.rerun()
-                st.info("Нажмите кнопку для запуска ML-анализа.")
-            
+                st.info("Click the button to run ML screening.")
             else:
-                results = st.session_state.pathology_results
-                found = results.get("pathologies_found", [])
-                if not found:
-                    st.success("Патологий не найдено ✅")
-                else:
-                    # ИЗМЕНЕНИЕ: Используем st.expander для каждой патологии
-                    for pathology_name in found:
-                        for key, details in results.items():
-                            if isinstance(details, dict) and details.get('name') == pathology_name:
-                                with st.expander(f"**{pathology_name}**", expanded=True):
-                                    pathology_slices = details.get('pathology_slices', [])
-                                    share = details.get('share_pathology_slices', 0)
-                                    st.progress(share, text=f"Доля позитивных срезов: {share:.0%}")
-                                    if pathology_slices:
-                                        st.caption(f"Обнаружена на срезах: {', '.join(map(str, pathology_slices))}")
-                                    else:
-                                        st.caption("Срезы с патологией не найдены.")
-                                break
+                _render_screening_results(st.session_state.screening_results)
+
+
+def _render_screening_results(result: dict):
+    """Render screening results."""
+    verdict = result.get("verdict")
+
+    if not result.get("is_valid"):
+        st.warning("Study did not pass validation.")
+        return
+
+    if verdict == "NORMAL":
+        st.success("No pathology detected ✅")
+    else:
+        st.error("Pathology signs detected ❌")
+
+    # Details
+    window_verdicts = result.get("window_verdicts", [])
+    n_abn = window_verdicts.count("ABNORMAL")
+    nw = len(window_verdicts)
+
+    st.caption(
+        f"Analyzed: {result.get('slices_processed', '?')}/{result.get('total_slices', '?')} slices "
+        f"({result.get('coverage_pct', 0):.0f}%)"
+    )
+    st.caption(f"Inference time: {result.get('inference_time', '?')}")
+
+    if n_abn > 0:
+        window_reasonings = result.get("window_reasonings", [])
+        window_slices = result.get("window_slices", [])
+        with st.expander(f"Details: {n_abn}/{nw} windows with pathology", expanded=True):
+            for v, r, slices in zip(window_verdicts, window_reasonings, window_slices):
+                if v == "ABNORMAL":
+                    st.caption(f"Slices {slices[0]}-{slices[1]}: {r}")
+
 
 def show_batch_page():
-    st.title("📦 Пакетная обработка")
+    st.title("Batch Processing")
 
-    # Ограничиваем ширину виджетов
     col1, _ = st.columns([1, 1])
 
     with col1:
         uploaded_files = st.file_uploader(
-            "Загрузите один или несколько ZIP-архивов",
+            "Upload one or more ZIP archives",
             type=["zip"],
             accept_multiple_files=True,
-            label_visibility="collapsed"
+            label_visibility="collapsed",
         )
 
-        with st.expander("Требования к содержимому архивов"):
+        with st.expander("Supported formats"):
             st.markdown("""
-            Можно загрузить **один или несколько** ZIP-архивов. 
-            
-            Каждый архив должен содержать **одно исследование** в одном из следующих форматов:
-            - **Серия DICOM:** множество файлов (часто с расширением `.dcm` или без него).
-            - **Многокадровый DICOM:** один `.dcm` файл, содержащий все срезы.
-            - **NIfTI:** один файл (`.nii` или `.nii.gz`).
-            - **Серия изображений:** множество файлов (`.png`, `.jpg`).
+            Upload one or more ZIP archives. Format is detected automatically:
+            - **DICOM** — `.dcm` files from one series (or one multi-frame `.dcm`)
+            - **NIfTI** — one or more `.nii` / `.nii.gz` files (each screened separately)
+            - **Images** — `.png` / `.jpg` files (treated as one series)
             """)
 
         if not uploaded_files:
             return
 
-        # Колонки для кнопок
+        if not check_api_health():
+            st.error("API backend is not available. Make sure it is running.")
+            return
+
         button_col1, button_col2 = st.columns(2)
 
         with button_col1:
-            if st.button("Обработать и сформировать CSV", type="primary", use_container_width=True):
+            if st.button("Process & Generate CSV", type="primary", use_container_width=True):
                 csv_data = []
-                fieldnames = [
-                    'archive_name', 'series_uid', 'source_format', 'modality',
-                    'body_part', 'orientation', 'num_frames',
-                    'is_valid', 'has_pathology', 'pneumonia', 'lung_cancer', 'aortic_dilation',
-                    'ml_processing_time'
-                ]
-                
-                # ИСПРАВЛЕНИЕ: Добавляем загрузку модели
-                model = get_model()
-                progress_bar = st.progress(0, "Начало обработки...")
-                
+                progress_bar = st.progress(0, "Starting...")
+
                 for i, file in enumerate(uploaded_files):
-                    progress_text = f"Анализ файла {i+1}/{len(uploaded_files)}: {file.name}..."
-                    progress_bar.progress(i / len(uploaded_files), text=progress_text)
-                    
-                    series_data, error_message = parse_zip_archive(file.getvalue())
+                    progress_bar.progress(
+                        i / len(uploaded_files),
+                        text=f"Processing {i+1}/{len(uploaded_files)}: {file.name}...",
+                    )
 
-                    if not series_data or error_message:
-                        csv_data.append({
-                            'archive_name': file.name, 
-                            'is_valid': False, 
-                            'series_uid': error_message or "Parsing error",
-                            'has_pathology': False,
-                            'pneumonia': False,
-                            'lung_cancer': False, 
-                            'aortic_dilation': False
-                        })
-                        continue
-                    
-                    for series_uid, data in series_data.items():
-                        meta = data['meta']
-                        validation_checks = validate_series(meta)
-                        is_valid = all(check['status'] for check in validation_checks)
+                    results = run_inference_batch(file.getvalue(), filename=file.name)
 
-                        if is_valid and len(data['frames']) > 0:
-                            inf = run_pathology_inference(model, data['frames'])
-                            # Используем bool для галочек вместо int
-                            has_pneumonia = inf.get('pneumonia', {}).get('has_pathology', False)
-                            has_lung_cancer = inf.get('lung_cancer', {}).get('has_pathology', False)
-                            has_aortic = inf.get('aortic_dilation', {}).get('has_pathology', False)
-                            ml_time = inf.get('study_processing_time', 0.0)
-                        else:
-                            has_pneumonia = False
-                            has_lung_cancer = False
-                            has_aortic = False
-                            ml_time = 0.0
-                            
+                    if results:
+                        for result in results:
+                            csv_data.append({
+                                "archive_name": result.get("archive_name", file.name),
+                                "series_uid": result.get("series_uid", "N/A"),
+                                "source_format": result.get("source_format", "N/A"),
+                                "modality": result.get("modality", "N/A"),
+                                "body_part": result.get("body_part", "N/A"),
+                                "num_frames": result.get("num_frames", 0),
+                                "is_valid": result.get("is_valid", False),
+                                "verdict": result.get("verdict", "N/A"),
+                                "abnormal_ratio": f"{result.get('abnormal_ratio', 0):.0%}" if result.get("abnormal_ratio") is not None else "N/A",
+                                "inference_time": result.get("inference_time", "N/A"),
+                            })
+                    else:
                         csv_data.append({
-                            'archive_name': file.name,
-                            'series_uid': series_uid,
-                            'source_format': meta.get('SourceFormat', 'N/A'),
-                            'modality': meta.get('Modality', 'N/A'),
-                            'body_part': meta.get('BodyPartExamined', 'N/A'),
-                            'orientation': meta.get('orientation', 'N/A'),
-                            'num_frames': meta.get('num_frames', 'N/A'),
-                            'is_valid': is_valid,
-                            'has_pathology': has_pneumonia or has_lung_cancer or has_aortic,
-                            'pneumonia': has_pneumonia,
-                            'lung_cancer': has_lung_cancer,
-                            'aortic_dilation': has_aortic,
-                            'ml_processing_time': f"{ml_time:.2f}s"
+                            "archive_name": file.name,
+                            "is_valid": False,
+                            "verdict": "ERROR",
                         })
-                
-                progress_bar.progress(1.0, text="Обработка завершена!")
-                st.session_state.result_df = pd.DataFrame(csv_data, columns=fieldnames).fillna("N/A")
+
+                progress_bar.progress(1.0, text="Done!")
+                st.session_state.result_df = pd.DataFrame(csv_data).fillna("N/A")
                 st.rerun()
 
-        if 'result_df' in st.session_state:
+        if "result_df" in st.session_state:
             with button_col2:
-                csv_string = st.session_state.result_df.to_csv(index=False).encode('utf-8')
+                csv_string = st.session_state.result_df.to_csv(index=False).encode("utf-8")
                 st.download_button(
-                    "Скачать CSV",
+                    "Download CSV",
                     csv_string,
                     file_name="batch_report.csv",
                     mime="text/csv",
-                    use_container_width=True
+                    use_container_width=True,
                 )
 
-    if 'result_df' in st.session_state:
+    if "result_df" in st.session_state:
         st.divider()
-        st.subheader("Результаты обработки")
+        st.subheader("Results")
         st.dataframe(st.session_state.result_df)
 
 
 def show_api_page():
-    st.title("🤖 API-интерфейс")
-    st.info("Для локального запуска API доступен по адресу `http://localhost:8502`.")
+    st.title("API")
+
+    api_available = check_api_health()
+    if api_available:
+        st.success("API backend is running.")
+    else:
+        st.error("API backend is not available.")
 
     st.markdown("""
-    Сервис предоставляет REST API для автоматической пакетной обработки исследований.
-    Это позволяет интегрировать `medscreen` в автоматизированные пайплайны.
+    The service provides a REST API for automated CT screening.
+    This allows integrating MedScreen into automated pipelines.
     """)
 
-    st.subheader("Пример использования")
-    st.markdown("""
-    Вы можете отправить один или несколько ZIP-архивов на эндпоинт `/process`. 
-    Сервис обработает их и вернет **JSON** с результатами анализа.
-    """)
-    
+    st.subheader("Usage Example")
+
     st.code("""
-# Пример отправки двух архивов для анализа
-curl -X POST "http://localhost:8502/process" \\
-     -H "Content-Type: multipart/form-data" \\
-     -F "files=@/путь/к/вашему/study1.zip" \\
-     -F "files=@/путь/к/вашему/study2.zip"
+curl -X POST http://localhost:8502/process \\
+     -F "files=@normal_dicom_chest.zip" \\
+     -F "files=@abnormal_nifti_covid_ct4.zip"
     """, language="bash")
 
-    st.subheader("Документация")
-    st.markdown("Полная интерактивная документация API (Swagger) с возможностью отправки тестовых запросов доступна по адресу [http://localhost:8502/docs](http://localhost:8502/docs).")
+    st.subheader("Documentation")
+    st.markdown(
+        "Interactive API docs (Swagger) are available at "
+        "[http://localhost:8502/docs](http://localhost:8502/docs)."
+    )
