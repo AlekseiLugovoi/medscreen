@@ -42,7 +42,7 @@ async def health():
 
 
 @app.post("/process", tags=["Processing"])
-async def process(files: List[UploadFile] = File(...)):
+def process(files: List[UploadFile] = File(...)):
     """
     Accept one or more ZIP archives with CT studies,
     return screening results as JSON.
@@ -53,7 +53,7 @@ async def process(files: List[UploadFile] = File(...)):
     all_results = []
 
     for file in files:
-        file_content = await file.read()
+        file_content = file.file.read()
         series_data, error_message = parse_zip_archive(file_content)
 
         if not series_data or error_message:

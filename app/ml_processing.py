@@ -10,19 +10,22 @@ def check_api_health() -> bool:
     try:
         resp = requests.get(f"{API_URL}/health", timeout=3)
         return resp.status_code == 200
-    except requests.ConnectionError:
+    except requests.RequestException:
         return False
 
 
-def _call_api(zip_bytes: bytes, filename: str) -> list:
+def _call_api(zip_bytes: bytes, filename: str) -> list | None:
     """Send ZIP to API, return list of results."""
-    resp = requests.post(
-        f"{API_URL}/process",
-        files={"files": (filename, zip_bytes, "application/zip")},
-        timeout=600,
-    )
-    resp.raise_for_status()
-    return resp.json()["results"]
+    try:
+        resp = requests.post(
+            f"{API_URL}/process",
+            files={"files": (filename, zip_bytes, "application/zip")},
+            timeout=600,
+        )
+        resp.raise_for_status()
+        return resp.json()["results"]
+    except requests.RequestException:
+        return None
 
 
 @st.cache_data(show_spinner="Running ML screening...")

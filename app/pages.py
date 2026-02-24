@@ -39,7 +39,6 @@ def show_about_page():
         - **FastAPI** — REST API backend
         - **Pydicom, Nibabel** — DICOM and NIfTI parsing
     """)
-    st.warning("> This is a research prototype. Not intended for clinical use.")
 
 
 def show_preview_page():
@@ -73,13 +72,23 @@ def show_preview_page():
             st.session_state.file_content = uploaded_file.getvalue()
 
         if "processed_data" not in st.session_state:
-            with st.spinner("Processing..."):
+            with st.spinner("Processing and preparing visualization..."):
                 data, error_message = parse_zip_archive(st.session_state.file_content)
                 if error_message:
                     st.error(f"Error reading archive: {error_message}")
                     del st.session_state.file_content
                     return
                 st.session_state.processed_data = data
+
+                # Precompute frames and GIF for instant display
+                uid = list(data.keys())[0]
+                sdata = data[uid]
+                default_window = "Lung" if sdata["meta"].get("Modality") == "CT" else "Default"
+                frames = prepare_frames_for_display(sdata, uid, default_window, CT_WINDOWS)
+                st.session_state.display_frames = frames
+                st.session_state.gif_bytes = create_gif(frames, uid, default_window)
+                st.session_state.active_window_name = default_window
+                st.session_state.show_visualization = True
                 st.rerun()
 
         # --- Step 2: Validation ---
@@ -126,15 +135,21 @@ def show_preview_page():
 
             with viz_cols[1]:
                 if st.button("Show", type="primary", use_container_width=True):
+                    new_window = st.session_state.window_name_temp
+                    if new_window != st.session_state.get("active_window_name"):
+                        frames = prepare_frames_for_display(
+                            series_data, series_uid, new_window, CT_WINDOWS)
+                        st.session_state.display_frames = frames
+                        st.session_state.gif_bytes = create_gif(
+                            frames, series_uid, new_window)
+                        st.session_state.active_window_name = new_window
                     st.session_state.show_visualization = True
-                    st.session_state.active_window_name = st.session_state.window_name_temp
+                    st.rerun()
 
-    # --- Visualization block ---
+    # --- Visualization block (reads precomputed data from session_state) ---
     if st.session_state.get("show_visualization"):
-        active_window = st.session_state.get("active_window_name")
-
-        display_frames = prepare_frames_for_display(series_data, active_window, CT_WINDOWS)
-        gif_bytes = create_gif(display_frames)
+        display_frames = st.session_state.display_frames
+        gif_bytes = st.session_state.gif_bytes
         num_frames = len(display_frames)
 
         if "slice_idx" not in st.session_state:
@@ -284,6 +299,7 @@ def show_batch_page():
                     use_container_width=True,
                 )
 
+    # Show results below controls (outside col1 to use full width)
     if "result_df" in st.session_state:
         st.divider()
         st.subheader("Results")

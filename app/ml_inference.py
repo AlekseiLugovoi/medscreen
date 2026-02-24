@@ -78,14 +78,7 @@ class CTScreener:
         tmp_dir: str = os.path.join(os.path.dirname(os.path.dirname(__file__)), "tmp"),
         gpu_memory: float = 0.3,
         max_model_len: int = 8192,
-        window_size: int = 20,
-        n_windows: int = 5,
-        threshold: float = 0.2,
     ):
-        self.window_size = window_size
-        self.n_windows = n_windows
-        self.threshold = threshold
-
         # Директория для временных файлов (vLLM требует file:// URL)
         self.tmp_dir = tmp_dir
         os.makedirs(tmp_dir, exist_ok=True)
@@ -136,14 +129,14 @@ class CTScreener:
             img = ((s - lo) / (hi - lo) * 255).astype(np.uint8)
         return Image.fromarray(img).convert("RGB")
 
-    def _build_windows(self, n: int):
+    def _build_windows(self, n: int, window_size: int, n_windows: int):
         """
         Рассчитывает параметры окон с автоподстройкой.
 
         Возвращает (window_size, n_windows, list of (start, end)).
         """
-        ws = self.window_size
-        nw = self.n_windows
+        ws = window_size
+        nw = n_windows
 
         if n <= ws:
             ws = n
@@ -162,12 +155,25 @@ class CTScreener:
 
         return ws, nw, windows
 
-    def run(self, volume: np.ndarray) -> dict:
+    def run(
+        self,
+        volume: np.ndarray,
+        center: float = -600,
+        width: float = 1500,
+        window_size: int = 20,
+        n_windows: int = 5,
+        threshold: float = 0.2,
+    ) -> dict:
         """
         Запуск инференса на КТ-объёме.
 
         Args:
             volume: np.ndarray shape (slices, H, W) — КТ-объём.
+            center: Уровень окна (HU) для визуализации.
+            width: Ширина окна (HU) для визуализации.
+            window_size: Базовый размер окна.
+            n_windows: Базовое количество окон.
+            threshold: Порог для диагноза ABNORMAL.
 
         Returns:
             dict с ключами:
@@ -176,12 +182,7 @@ class CTScreener:
               slices_processed, coverage_pct, inference_time.
         """
         n = volume.shape[0]
-        ws, nw, windows = self._build_windows(n)
-
-        logger.info(
-            f"Инференс: {nw} окон × {ws} срезов = "
-            f"{nw * ws}/{n} ({nw * ws / n * 100:.0f}%)"
-        )
+        ws, nw, windows = self._build_windows(n, window_size, n_windows)
 
         all_messages = []
         window_meta = []
@@ -190,7 +191,7 @@ class CTScreener:
             for w, (start, end) in enumerate(windows):
                 image_urls = []
                 for i in range(start, end):
-                    img = self.hu_to_pil(volume[i])
+                    img = self.hu_to_pil(volume[i], center=center, width=width)
                     path = os.path.join(tmpdir, f"w{w}_s{i}.png")
                     img.save(path)
                     image_urls.append({
@@ -232,13 +233,14 @@ class CTScreener:
                 verdicts.append("NORMAL")
                 reasonings.append("JSON parse error")
 
-        abnormal_ratio = verdicts.count("ABNORMAL") / len(verdicts)
-        final = "ABNORMAL" if abnormal_ratio >= self.threshold else "NORMAL"
+        abnormal_ratio = verdicts.count("ABNORMAL") / float(len(verdicts)) if len(verdicts) > 0 else 0.0
+        final = "ABNORMAL" if abnormal_ratio >= threshold else "NORMAL"
 
         logger.info(
-            f"Результат: {final} | "
-            f"ABNORMAL окон: {verdicts.count('ABNORMAL')}/{nw} "
-            f"({abnormal_ratio:.0%}) | {elapsed:.1f}с"
+            f"Result: {final} | "
+            f"ABNORMAL windows: {verdicts.count('ABNORMAL')}/{nw} ({abnormal_ratio:.0%}) | "
+            f"Slices count: {nw * ws}/{n} ({nw * ws / n * 100:.0f}%) | "
+            f"{elapsed:.1f}s"
         )
 
         return {
