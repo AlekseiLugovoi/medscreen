@@ -15,8 +15,8 @@ ENV PATH="/opt/venv/bin:$PATH"
 
 COPY requirements.txt .
 
-# vllm pulls torch and other ML dependencies
-RUN pip install --no-cache-dir -r requirements.txt && \
+# vllm pulls torch and other ML dependencies (~5GB)
+RUN pip install --no-cache-dir --timeout 600 --retries 5 -r requirements.txt && \
     pip cache purge
 
 # Copy application
