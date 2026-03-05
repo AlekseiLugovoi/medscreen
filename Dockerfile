@@ -13,7 +13,7 @@ WORKDIR /app
 
 # Install only lightweight app dependencies (streamlit, fastapi, dicom, etc.)
 COPY requirements-app.txt .
-RUN pip install --no-cache-dir -r requirements-app.txt
+RUN pip install --no-cache-dir --ignore-installed -r requirements-app.txt
 
 # Copy application
 COPY ./app ./app
