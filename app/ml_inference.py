@@ -76,7 +76,7 @@ class CTScreener:
         self,
         model: str = "google/medgemma-1.5-4b-it",
         tmp_dir: str = os.path.join(os.path.dirname(os.path.dirname(__file__)), "tmp"),
-        gpu_memory: float = 0.3,
+        gpu_memory: float = float(os.environ.get("GPU_MEMORY_UTILIZATION", 0.8)),
         max_model_len: int = 8192,
     ):
         # Директория для временных файлов (vLLM требует file:// URL)

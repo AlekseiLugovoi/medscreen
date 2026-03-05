@@ -2,20 +2,14 @@
 streamlit==1.49.1
 
 # Medical Imaging & Data Processing
+# numpy and Pillow already provided by vllm base image
 imageio==2.36.0
-numpy==1.26.4
 pandas==2.2.3
-Pillow==11.2.1
 pydicom==3.0.1
 nibabel==5.3.2
-
-# ML (vLLM + structured output)
-vllm>=0.8.0
-pydantic>=2.0
 
 # API
 fastapi>=0.115.0
 uvicorn[standard]==0.30.3
 python-multipart==0.0.9
-
-# torch устанавливается как зависимость vllm
+pydantic>=2.0
