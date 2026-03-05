@@ -4,7 +4,7 @@ Chest CT screening: upload a study, get a verdict — **NORMAL** or **ABNORMAL**
 
 Powered by [MedGemma 1.5 4B](https://ai.google.dev/gemma/docs/medgemma) + [vLLM](https://github.com/vllm-project/vllm) structured output.
 
-[Online Demo](https://d75658572430f4f78b2972d1c74f592ca.clg07azjl.paperspacegradient.com/) · [Demo Data](https://drive.google.com/drive/folders/1ChmkPR-5OwZB8Ub9h23VuHoOiA2hX-gx?usp=sharing)
+[Online Demo](https://dd62a182fa15b4f0a98aa4497baf2063f.clg07azjl.paperspacegradient.com/) · [Demo Data](https://drive.google.com/drive/folders/1ChmkPR-5OwZB8Ub9h23VuHoOiA2hX-gx?usp=sharing)
 
 ## Quick Start
 

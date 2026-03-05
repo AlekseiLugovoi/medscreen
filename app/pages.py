@@ -180,8 +180,11 @@ def show_preview_page():
                         st.session_state.file_content,
                         filename=uploaded_file.name,
                     )
-                    st.session_state.screening_results = result
-                    st.rerun()
+                    if result is None:
+                        st.error("Inference failed. Make sure the ZIP contains a valid CT study (.nii.gz, DICOM, or images).")
+                    else:
+                        st.session_state.screening_results = result
+                        st.rerun()
                 st.info("Click the button to run ML screening.")
             else:
                 _render_screening_results(st.session_state.screening_results)
