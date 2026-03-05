@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
 # vllm/vllm-openai already has torch, triton, vllm, cuda — no need to install them
-FROM vllm/vllm-openai:v0.8.2
+FROM vllm/vllm-openai:v0.8.4
 
 ARG HF_TOKEN
 
