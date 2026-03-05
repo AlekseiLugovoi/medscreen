@@ -1,23 +1,19 @@
 # syntax=docker/dockerfile:1
 
-FROM nvidia/cuda:12.4.1-runtime-ubuntu22.04
+# vllm/vllm-openai already has torch, triton, vllm, cuda — no need to install them
+FROM vllm/vllm-openai:v0.8.2
 
 ARG HF_TOKEN
 
 ENV DEBIAN_FRONTEND=noninteractive
-RUN apt-get update && apt-get install -y python3.11 python3.11-venv python3-pip curl && \
+RUN apt-get update && apt-get install -y curl && \
     rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-RUN python3.11 -m venv /opt/venv
-ENV PATH="/opt/venv/bin:$PATH"
-
-COPY requirements.txt .
-
-# vllm pulls torch and other ML dependencies (~5GB)
-RUN pip install --no-cache-dir --timeout 600 --retries 5 -r requirements.txt && \
-    pip cache purge
+# Install only lightweight app dependencies (streamlit, fastapi, dicom, etc.)
+COPY requirements-app.txt .
+RUN pip install --no-cache-dir -r requirements-app.txt
 
 # Copy application
 COPY ./app ./app
@@ -36,7 +32,7 @@ set -e
 # Download model on first run
 if [ ! -d "/app/huggingface_cache/hub" ]; then
   echo "Downloading model..."
-  python3.11 -c "
+  python3 -c "
 from huggingface_hub import snapshot_download
 import os
 token = os.environ.get('HF_TOKEN')

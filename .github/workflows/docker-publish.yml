@@ -57,5 +57,5 @@ jobs:
           tags: ghcr.io/alekseilugovoi/medscreen:latest
           build-args: |
             HF_TOKEN=${{ secrets.HF_TOKEN }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=registry,ref=ghcr.io/alekseilugovoi/medscreen:cache
+          cache-to: type=registry,ref=ghcr.io/alekseilugovoi/medscreen:cache,mode=max
