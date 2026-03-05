@@ -5,6 +5,7 @@
 # Python
 __pycache__/
 *.pyc
+.localdev
 .venv/
 venv/
 
