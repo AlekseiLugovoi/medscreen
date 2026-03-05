@@ -20,7 +20,10 @@ services:
       - PYTHONPATH=/app
       - HF_HOME=/app/huggingface_cache
       - HF_TOKEN=${HF_TOKEN}
-      - GPU_MEMORY_UTILIZATION=${GPU_MEMORY_UTILIZATION:-0.8}
+      - GPU_MEMORY_UTILIZATION=${GPU_MEMORY_UTILIZATION:-0.94}
+      - MAX_MODEL_LEN=${MAX_MODEL_LEN:-6144}
+      - WINDOW_SIZE=${WINDOW_SIZE:-20}
+      - N_WINDOWS=${N_WINDOWS:-5}
     restart: unless-stopped
     runtime: nvidia
 

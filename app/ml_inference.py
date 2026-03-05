@@ -76,8 +76,8 @@ class CTScreener:
         self,
         model: str = "google/medgemma-1.5-4b-it",
         tmp_dir: str = os.path.join(os.path.dirname(os.path.dirname(__file__)), "tmp"),
-        gpu_memory: float = float(os.environ.get("GPU_MEMORY_UTILIZATION", 0.9)),
-        max_model_len: int = int(os.environ.get("MAX_MODEL_LEN", 5120)),
+        gpu_memory: float = float(os.environ.get("GPU_MEMORY_UTILIZATION", 0.94)),
+        max_model_len: int = int(os.environ.get("MAX_MODEL_LEN", 6144)),
     ):
         # Директория для временных файлов (vLLM требует file:// URL)
         self.tmp_dir = tmp_dir
@@ -160,8 +160,8 @@ class CTScreener:
         volume: np.ndarray,
         center: float = -600,
         width: float = 1500,
-        window_size: int = 20,
-        n_windows: int = 5,
+        window_size: int = int(os.environ.get("WINDOW_SIZE", 20)),
+        n_windows: int = int(os.environ.get("N_WINDOWS", 5)),
         threshold: float = 0.2,
     ) -> dict:
         """
